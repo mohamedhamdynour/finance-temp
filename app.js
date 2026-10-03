@@ -3697,6 +3697,121 @@ async function doZakatPay(){
   }catch(e){console.error('doZakatPay:',e);toast('خطأ: '+e.message,false)}
 }
 
+// ═══════════════════════════════════════════════════
+//  HELP MODAL
+// ═══════════════════════════════════════════════════
+function openHelpModal(){
+  openModal('modal-help');
+  switchHelpTab('start'); // reset to first tab
+}
+function switchHelpTab(tab){
+  document.querySelectorAll('.help-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  document.querySelectorAll('.help-pane').forEach(p=>p.classList.toggle('active',p.id==='help-pane-'+tab));
+}
+
+// ═══════════════════════════════════════════════════
+//  SQL COPY MODAL
+// ═══════════════════════════════════════════════════
+let _sqlCache = null;
+
+async function openSqlModal(){
+  openModal('modal-sql');
+  const codeEl=document.getElementById('sql-code-view');
+  const sizeEl=document.getElementById('sql-file-size');
+  if(_sqlCache){
+    codeEl.innerHTML='<code>'+syntaxHighlightSql(_sqlCache)+'</code>';
+    sizeEl.textContent=(new Blob([_sqlCache]).size/1024).toFixed(1)+' KB';
+    return;
+  }
+  codeEl.innerHTML='<code>جاري التحميل...</code>';
+  try{
+    const res=await fetch('schema_v2.sql?t='+Date.now());
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    _sqlCache=await res.text();
+    codeEl.innerHTML='<code>'+syntaxHighlightSql(_sqlCache)+'</code>';
+    sizeEl.textContent=(new Blob([_sqlCache]).size/1024).toFixed(1)+' KB';
+  }catch(e){
+    codeEl.innerHTML='<code style="color:#f87171">⚠️ تعذّر تحميل schema_v2.sql\n\nتأكد أن الملف موجود بجانب index.html\n\nالخطأ: '+escapeHtml(e.message)+'</code>';
+    sizeEl.textContent='—';
+  }
+}
+
+async function copySqlToClipboard(){
+  const btn=document.getElementById('sql-copy-btn');
+  const txt=document.getElementById('sql-copy-text');
+  try{
+    // إن لم نُحمّل الكود بعد، حمّله
+    if(!_sqlCache){
+      const res=await fetch('schema_v2.sql?t='+Date.now());
+      _sqlCache=await res.text();
+    }
+    await navigator.clipboard.writeText(_sqlCache);
+    const orig=txt.textContent;
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-primary');
+    txt.textContent='✓ تم النسخ';
+    setTimeout(()=>{
+      txt.textContent=orig;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-primary');
+    },2000);
+  }catch(e){
+    toast('تعذّر النسخ: '+e.message,false);
+  }
+}
+
+function downloadSql(){
+  if(!_sqlCache)return toast('لم يتم تحميل الكود بعد',false);
+  const blob=new Blob([_sqlCache],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='schema_v2.sql';
+  a.click();
+  toast('تم التحميل ✓');
+}
+
+// Syntax highlighting بسيط (بدون مكتبات خارجية)
+function syntaxHighlightSql(sql){
+  return escapeHtml(sql)
+    // Comments (-- ...)
+    .replace(/(--[^\n]*)/g,'<span class="comment">$1</span>')
+    // Strings ('...')
+    .replace(/('[^']*')/g,'<span class="str">$1</span>')
+    // Numbers
+    .replace(/\b(\d+(\.\d+)?)\b/g,'<span class="num">$1</span>')
+    // Keywords (order matters — from longest to shortest to avoid partial match)
+    .replace(/\b(CREATE OR REPLACE FUNCTION|CREATE OR REPLACE|CREATE TABLE IF NOT EXISTS|CREATE TABLE|CREATE INDEX IF NOT EXISTS|CREATE INDEX|CREATE TRIGGER|CREATE POLICY|CREATE UNIQUE INDEX|DROP TABLE IF EXISTS|DROP TABLE|DROP TRIGGER IF EXISTS|DROP FUNCTION IF EXISTS|ALTER TABLE|ALTER DEFAULT PRIVILEGES|ON CONFLICT|ON DELETE|ON UPDATE|RETURNING|SECURITY DEFINER|LANGUAGE plpgsql|LANGUAGE sql|ENABLE ROW LEVEL SECURITY|GRANT|REVOKE|FOR EACH ROW|EXECUTE FUNCTION|NOTIFY pgrst)\b/gi,'<span class="kw">$1</span>')
+    .replace(/\b(SELECT|FROM|WHERE|INSERT INTO|UPDATE|DELETE|VALUES|AND|OR|NOT|NULL|IS|IN|EXISTS|AS|ASC|DESC|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP BY|ORDER BY|LIMIT|OFFSET|HAVING|UNION|ALL|DISTINCT|CASE|WHEN|THEN|ELSE|END|BEGIN|RETURN|DECLARE|IF|THEN|ELSIF|LOOP|WHILE|FOR|INTO|COALESCE|SUM|COUNT|AVG|MIN|MAX|GREATEST|LEAST|jsonb_build_object|jsonb_agg|json_agg|json_agg|random|md5|substring|upper|lower|interval|now|auth\.uid|current_date|current_timestamp|COLLATE|WITH|RECURSIVE|TABLE|VIEW|FUNCTION|TRIGGER|POLICY|INDEX|PRIMARY KEY|FOREIGN KEY|REFERENCES|UNIQUE|CHECK|DEFAULT|CASCADE|RESTRICT|SET NULL|SET DEFAULT|BETWEEN|LIKE|ILIKE|SIMILAR TO|EXTRACT|DATE_TRUNC|to_char|to_date|cast|::|TEXT|INT|INTEGER|BIGINT|BIGSERIAL|SERIAL|NUMERIC|DECIMAL|BOOLEAN|UUID|TIMESTAMPTZ|TIMESTAMP|DATE|JSONB|JSON)\b/gi,'<span class="kw">$1</span>')
+    // Function names
+    .replace(/\b(\w+)\s*\(/g,'<span class="func">$1</span>(')
+    ;
+}
+
+// ═══════════════════════════════════════════════════
+//  ERROR LOGGING (بديل مجاني لـ Sentry)
+// ═══════════════════════════════════════════════════
+async function logError(message, stack, context){
+  try{
+    if(!authSession?.user?.id)return;
+    await sbPost('error_logs',[{
+      user_id: authSession.user.id,
+      message: String(message).slice(0,2000),
+      stack: String(stack||'').slice(0,5000),
+      context: String(context||'').slice(0,200),
+      user_agent: navigator.userAgent,
+      url: location.href
+    }]);
+  }catch(e){/* صامت — لا نريد حلقة أخطاء */}
+}
+
+// Global error handler
+window.addEventListener('error',e=>logError(e.message,e.error?.stack,'window.error'));
+window.addEventListener('unhandledrejection',e=>logError(
+  e.reason?.message||String(e.reason),
+  e.reason?.stack,
+  'unhandledrejection'
+));
+
 // ═══ INIT ═══
 initDark();
 initAuthGate();
