@@ -1,353 +1,581 @@
--- ══════════════════════════════════════════════════════════════
---  محفظة مالية — سكريبت إعادة بناء قاعدة البيانات بالكامل (A → Z)
---  Supabase / PostgreSQL
+-- ============================================================================
+--  Personal Finance Database Schema
+-- ============================================================================
+--  الوصف:
+--    مخطط قاعدة بيانات لتطبيق إدارة مالية شخصية يشمل:
+--    البنوك، المعاملات البنكية، الأسهم، المعادن، الشهادات، الديون،
+--    الأهداف المالية، أسعار الصرف، ولقطات المحفظة.
+--
+--  البيئة:
+--    PostgreSQL 14+ / Supabase
 --
 --  طريقة الاستخدام:
---  1) افتح مشروعك في supabase.com → SQL Editor → New query
---  2) الصق هذا الملف كاملاً وشغّله مرة واحدة (Run)
---  3) هذا السكريبت يحذف الجداول القديمة بنفس الاسم أولاً (DROP) قبل
---     إعادة إنشائها — استخدمه فقط إذا كنت تريد البدء من جديد تمامًا،
---     أو على مشروع Supabase فارغ. إن كانت عندك بيانات حالية تريد
---     الاحتفاظ بها، خذ نسخة احتياطية (Database → Backups) أولاً،
---     أو احذف أسطر الـ DROP TABLE واستخدم فقط أوامر
---     "ALTER TABLE ... ADD COLUMN IF NOT EXISTS" الموجودة في نهاية
---     كل قسم لإضافة الأعمدة الناقصة فقط دون فقد بياناتك.
--- ══════════════════════════════════════════════════════════════
-
--- ────────────────────────────────────────────────────────────
--- 0) تنظيف كامل (احذر: يمسح كل البيانات الحالية بهذه الأسماء)
--- ────────────────────────────────────────────────────────────
-drop table if exists debt_payments        cascade;
-drop table if exists debts                cascade;
-drop table if exists recurring_transactions cascade;
-drop table if exists dividends            cascade;
-drop table if exists certificates         cascade;
-drop table if exists metal_prices         cascade;
-drop table if exists metal_transactions   cascade;
-drop table if exists stock_prices         cascade;
-drop table if exists stock_transactions   cascade;
-drop table if exists bank_transactions    cascade;
-drop table if exists banks                cascade;
-drop table if exists exchange_rates       cascade;
-drop table if exists portfolio_snapshots  cascade;
-drop table if exists financial_goals      cascade;
-drop table if exists app_settings         cascade;
-
--- ────────────────────────────────────────────────────────────
--- 1) banks — الحسابات البنكية (وحسابات الكاش)
--- ────────────────────────────────────────────────────────────
-create table banks (
-  id           bigint generated always as identity primary key,
-  name         text        not null,
-  bank_code    text,                              -- كود/رقم البنك (اختياري)
-  account_no   text,                              -- رقم الحساب (اختياري)
-  type         text        not null default 'جاري', -- جاري | توفير | استثماري | بورصة | كاش
-  currency     text        not null default 'EGP',  -- كود العملة كما في app_settings.currencies
-  balance      numeric(18,4) not null default 0,     -- الرصيد الحالي (بعملة الحساب نفسها)
-  min_balance  numeric(18,4) default 0,              -- الحد الأدنى للتنبيه
-  color        text,                              -- لون مخصص Hex مثل #1a56db
-  notes        text,
-  is_active    boolean     not null default true,   -- false = مؤرشف
-  created_at   timestamptz not null default now()
-);
-comment on table banks is 'الحسابات البنكية وحسابات الكاش/النقد';
-
--- ────────────────────────────────────────────────────────────
--- 2) bank_transactions — سجل حركات كل حساب (المصدر الوحيد للحقيقة المالية)
--- ────────────────────────────────────────────────────────────
-create table bank_transactions (
-  id                 bigint generated always as identity primary key,
-  bank_id            bigint references banks(id) on delete cascade,
-  type               text        not null,  -- إيداع | سحب | تحويل وارد | تحويل صادر | رصيد افتتاحي | عائد شهادة | أرباح
-  amount             numeric(18,4) not null,
-  balance_after      numeric(18,4),          -- الرصيد بعد هذه الحركة (يُعاد حسابه تلقائيًا عبر recomputeBankBalance)
-  date               date        not null default current_date,
-  notes              text,
-  category           text,                  -- تصنيف حر: تحويل / أرباح أسهم / شراء معادن / سداد دين / زكاة ...
-  linked_transfer_id bigint references bank_transactions(id) on delete set null, -- ربط طرفي التحويل ببعضهما
-  created_at         timestamptz not null default now()
-);
-create index idx_banktxn_bank_date on bank_transactions(bank_id, date);
-comment on table bank_transactions is 'دفتر الأستاذ البنكي — كل عملية مالية فعلية تمر من هنا';
-
--- ────────────────────────────────────────────────────────────
--- 3) stock_transactions — عمليات شراء/بيع الأسهم والصناديق
--- ────────────────────────────────────────────────────────────
-create table stock_transactions (
-  id                  bigint generated always as identity primary key,
-  bank_id             bigint references banks(id) on delete set null,
-  bank_transaction_id bigint references bank_transactions(id) on delete set null,
-  type                text        not null,           -- شراء | بيع
-  symbol              text        not null,
-  name                text,
-  sec_type            text        default 'سهم',       -- سهم | صندوق أسهم | صندوق دخل ثابت | ...
-  market              text        default 'EGX',       -- EGX | TADAWUL | ADX | NYSE | NASDAQ | CRYPTO
-  price_currency      text        default 'EGP',       -- عملة سعر السهم (لازم تطابق عملة الحساب البنكي)
-  quantity            numeric(18,4) not null,
-  price               numeric(18,4) not null default 0,
-  total               numeric(18,4) not null default 0,
-  commission          numeric(18,4) default 0,
-  commission_fixed    numeric(18,4) default 0,
-  net                 numeric(18,4) not null default 0,
-  profit              numeric(18,4),                   -- ربح/خسارة محقق (لعمليات البيع فقط)
-  date                date        not null default current_date,
-  notes               text,
-  created_at          timestamptz not null default now()
-);
-create index idx_stocktxn_symbol on stock_transactions(symbol);
-comment on table stock_transactions is 'عمليات شراء/بيع الأوراق المالية؛ الحيازات الحالية تُشتق من هذا الجدول وليست مخزَّنة';
-
--- ────────────────────────────────────────────────────────────
--- 4) stock_prices — آخر سعر معروف لكل ورقة مالية
--- ────────────────────────────────────────────────────────────
-create table stock_prices (
-  symbol         text primary key,
-  name           text,
-  sec_type       text,
-  current_price  numeric(18,4) not null default 0,
-  updated_at     timestamptz default now()
-);
-comment on table stock_prices is 'آخر سعر مُحدَّث يدويًا لكل رمز سهم؛ يُستخدم لتقييم الحيازات';
-
--- ────────────────────────────────────────────────────────────
--- 5) metal_transactions — عمليات شراء/بيع المعادن الثمينة
--- ────────────────────────────────────────────────────────────
-create table metal_transactions (
-  id                  bigint generated always as identity primary key,
-  bank_id             bigint references banks(id) on delete set null,
-  bank_transaction_id bigint references bank_transactions(id) on delete set null,
-  op                  text        not null,          -- شراء | بيع
-  metal_type          text        not null,          -- ذهب 24 | ذهب 21 | ذهب 18 | جنيه ذهب | سبيكة ذهب | فضة ...
-  currency            text        default 'EGP',     -- عملة الشراء (لازم تطابق عملة الحساب البنكي)
-  weight              numeric(18,4) not null,          -- بالجرام
-  price_per_gram      numeric(18,4) not null,
-  total               numeric(18,4) not null default 0,
-  manufacturing       numeric(18,4) default 0,        -- مصنعية (شراء فقط)
-  commission_fixed    numeric(18,4) default 0,
-  cashback            numeric(18,4) default 0,        -- كاش باك (بيع فقط)
-  net                 numeric(18,4) not null default 0,
-  date                date        not null default current_date,
-  notes               text,                          -- يُستخدم كعنوان/تسمية القطعة (سبيكة 1 أونصة...)
-  created_at          timestamptz not null default now()
-);
-create index idx_metaltxn_type on metal_transactions(metal_type);
-comment on table metal_transactions is 'عمليات شراء/بيع الذهب والفضة؛ الحيازات تُشتق من هذا الجدول';
-
--- ────────────────────────────────────────────────────────────
--- 6) metal_prices — آخر سعر جرام معروف لكل نوع معدن
--- ────────────────────────────────────────────────────────────
-create table metal_prices (
-  metal_type     text primary key,
-  price_per_gram numeric(18,4) not null default 0,
-  updated_at     timestamptz default now()
-);
-comment on table metal_prices is 'آخر سعر جرام لكل نوع معدن (يدويًا أو تلقائيًا عبر GoldAPI.io)';
-
--- ────────────────────────────────────────────────────────────
--- 7) certificates — الشهادات الادخارية
--- ────────────────────────────────────────────────────────────
-create table certificates (
-  id                  bigint generated always as identity primary key,
-  bank_id             bigint references banks(id) on delete set null,
-  bank_transaction_id bigint references bank_transactions(id) on delete set null,
-  name                text        not null,
-  bank_name           text,
-  amount              numeric(18,4) not null,           -- أصل مبلغ الشهادة
-  currency            text        default 'EGP',
-  rate                numeric(9,4) not null,             -- الفائدة السنوية %
-  duration            numeric(6,2) not null default 1,   -- المدة بالسنوات
-  issued_date         date        not null,
-  maturity_date       date        not null,
-  payout_type         text        not null default 'سنوي', -- سنوي | شهري | أسبوعي | يومي
-  total_interest      numeric(18,4) not null default 0,   -- إجمالي الفائدة المتوقعة طوال المدة
-  interest_paid       numeric(18,4) not null default 0,   -- إجمالي ما صُرف فعليًا حتى الآن
-  created_at          timestamptz not null default now()
-);
-comment on table certificates is 'الشهادات الادخارية البنكية وجدول صرف عوائدها';
-
--- ────────────────────────────────────────────────────────────
--- 8) dividends — توزيعات الأرباح النقدية المستلمة
---    (توزيعات الأسهم "العينية" تُسجَّل كصف شراء بسعر صفر في stock_transactions)
--- ────────────────────────────────────────────────────────────
-create table dividends (
-  id                  bigint generated always as identity primary key,
-  symbol              text        not null,
-  amount              numeric(18,4) not null,
-  date                date        not null default current_date,
-  bank_id             bigint references banks(id) on delete set null,
-  bank_transaction_id bigint references bank_transactions(id) on delete set null,
-  notes               text,
-  created_at          timestamptz not null default now()
-);
-comment on table dividends is 'توزيعات الأرباح النقدية المستلمة من الأسهم';
-
--- ────────────────────────────────────────────────────────────
--- 9) recurring_transactions — العمليات البنكية المتكررة (قوالب)
--- ────────────────────────────────────────────────────────────
-create table recurring_transactions (
-  id           bigint generated always as identity primary key,
-  name         text        not null,
-  type         text        not null,          -- إيداع | سحب
-  freq         text        not null default 'monthly', -- weekly | monthly | yearly
-  amount       numeric(18,4) not null,
-  bank_id      bigint references banks(id) on delete set null,
-  start_date   date        not null default current_date,
-  last_applied date,                          -- آخر مرة طُبِّقت فيها فعليًا
-  created_at   timestamptz not null default now()
-);
-comment on table recurring_transactions is 'قوالب العمليات المتكررة؛ كل تطبيق فعلي ينشئ صفًا مستقلًا في bank_transactions';
-
--- ────────────────────────────────────────────────────────────
--- 10) financial_goals — الأهداف المالية
--- ────────────────────────────────────────────────────────────
-create table financial_goals (
-  id         bigint generated always as identity primary key,
-  name       text        not null,
-  target     numeric(18,4) not null,
-  category   text        not null default 'all', -- all | banks | stocks | metals | certs
-  created_at timestamptz not null default now()
-);
-comment on table financial_goals is 'أهداف الادخار — التقدم يُحسب لحظيًا من إجمالي الفئة المختارة';
-
--- ────────────────────────────────────────────────────────────
--- 11) exchange_rates — أسعار الصرف (مرجعها الجنيه المصري دائمًا)
---     rate = كم جنيهًا مصريًا يساوي 1 وحدة من هذه العملة (ثابت داخليًا
---     بصرف النظر عن العملة الأساسية المختارة في الإعدادات؛ التطبيق
---     يحوّلها تلقائيًا عبر EGP كنقطة ارتكاز — راجع toEGP() في الكود)
--- ────────────────────────────────────────────────────────────
-create table exchange_rates (
-  currency   text primary key,      -- USD, SAR, AED, EUR ...
-  rate       numeric(18,6) not null,  -- 1 currency = rate EGP
-  updated_at timestamptz default now()
-);
-comment on table exchange_rates is 'أسعار الصرف مقابل الجنيه المصري كنقطة ارتكاز ثابتة داخليًا';
-
--- ────────────────────────────────────────────────────────────
--- 12) portfolio_snapshots — لقطات دورية لإجمالي المحفظة (للرسم البياني عبر الزمن)
--- ────────────────────────────────────────────────────────────
-create table portfolio_snapshots (
-  snapshot_date date primary key,
-  total_banks   numeric(18,4) default 0,
-  total_stocks  numeric(18,4) default 0,
-  total_metals  numeric(18,4) default 0,
-  total_certs   numeric(18,4) default 0,
-  grand_total   numeric(18,4) default 0
-);
-comment on table portfolio_snapshots is 'لقطة يومية لإجمالي كل فئة، تُستخدم في الرسم البياني لأداء المحفظة عبر الزمن';
-
--- ────────────────────────────────────────────────────────────
--- 13) debts — الديون والالتزامات (عليك / لك)
--- ────────────────────────────────────────────────────────────
-create table debts (
-  id         bigint generated always as identity primary key,
-  name       text        not null,
-  party      text,                          -- الطرف الآخر (اسم شخص/جهة)
-  type       text        not null,          -- دين علي | دين لي
-  rate       numeric(9,4) default 0,          -- فائدة سنوية % (إن وجدت)
-  amount     numeric(18,4) not null,          -- المبلغ الأصلي
-  remaining  numeric(18,4) not null,          -- المتبقي حاليًا
-  start_date date,
-  due_date   date,
-  bank_id    bigint references banks(id) on delete set null,
-  notes      text,
-  created_at timestamptz not null default now()
-);
-comment on table debts is 'الديون والالتزامات، سواء عليك أو مستحقة لك';
-
--- ────────────────────────────────────────────────────────────
--- 14) debt_payments — سجل دفعات سداد/تحصيل كل دين
--- ────────────────────────────────────────────────────────────
-create table debt_payments (
-  id                  bigint generated always as identity primary key,
-  debt_id             bigint references debts(id) on delete cascade,
-  bank_id             bigint references banks(id) on delete set null,
-  bank_transaction_id bigint references bank_transactions(id) on delete set null,
-  amount              numeric(18,4) not null,
-  date                date        not null default current_date,
-  notes               text,
-  created_at          timestamptz not null default now()
-);
-comment on table debt_payments is 'سجل دفعات كل دين — سداد (دين علي) أو تحصيل (دين لي)';
-
--- ────────────────────────────────────────────────────────────
--- 15) app_settings — إعدادات التطبيق العامة (صف واحد ثابت id=1)
---     value (jsonb) يحوي: exchange_name, base_currency, currencies
---     [{code,name}], goldapi_key, zakat {start_date, gold_price,
---     silver_price, basis, include{}, history[]}
--- ────────────────────────────────────────────────────────────
-create table app_settings (
-  id         int primary key,
-  value      jsonb not null default '{}'::jsonb,
-  updated_at timestamptz default now()
-);
-comment on table app_settings is 'صف واحد فقط (id=1) يحمل كل إعدادات التطبيق كـ JSON';
-
--- ══════════════════════════════════════════════════════════════
--- تفعيل Row Level Security — الوصول يتطلب تسجيل دخول (Supabase Auth)
+--    1) افتح Supabase Dashboard → SQL Editor
+--    2) الصق محتوى الملف كاملًا
+--    3) اضغط Run
 --
--- هذا المشروع مُعد ليكون "مشروعك الشخصي" — كل مستخدم يربط التطبيق
--- بمشروع Supabase خاص به (رابط + anon key يُدخلهما بنفسه عند أول
--- استخدام)، ثم يسجّل حسابه (Sign up) من داخل الصفحة نفسها. الـ anon
--- key قد يكون ظاهرًا لأي زائر يفتح هذا المشروع إن كان عامًا على
--- GitHub، لكن السياسة أدناه تمنع القراءة/الكتابة لأي حد مش مسجّل
--- دخول على حسابك — يعني مجرد معرفة الرابط والمفتاح العام مش كفاية
--- للوصول لبياناتك. فعّل "Confirm email" في Authentication → Providers
--- حسب رغبتك (تعطيله يسمح بالدخول فورًا بعد التسجيل بدون تأكيد بريد).
--- ══════════════════════════════════════════════════════════════
-do $$
-declare t text;
-begin
-  for t in select unnest(array[
-    'banks','bank_transactions','stock_transactions','stock_prices',
-    'metal_transactions','metal_prices','certificates','dividends',
-    'recurring_transactions','financial_goals','exchange_rates',
-    'portfolio_snapshots','debts','debt_payments','app_settings'
-  ])
-  loop
-    execute format('alter table %I enable row level security;', t);
-    execute format(
-      'create policy %I on %I for all using (auth.role() = ''authenticated'') with check (auth.role() = ''authenticated'');',
-      t || '_require_auth', t
-    );
-  end loop;
-end $$;
+--  ملاحظات:
+--    - الملف آمن لإعادة التشغيل (idempotent): لن يحذف بيانات موجودة.
+--    - الجداول مرتّبة حسب الاعتماديات (الأب قبل الابن).
+--    - جميع المفاتيح الأساسية من نوع bigserial لتوليد id تلقائيًا.
+--    - سياسات RLS تسمح لدور authenticated بالوصول الكامل.
+--      لتطبيق متعدد المستخدمين: أضف عمود user_id وعدّل السياسات.
+--
+--  المحتويات:
+--    PART 1  - الجداول (Tables)
+--    PART 2  - الفهارس (Indexes)
+--    PART 3  - الصلاحيات (Grants)
+--    PART 4  - تفعيل Row Level Security
+--    PART 5  - سياسات RLS (Policies)
+--    PART 6  - إعادة تحميل مخطط PostgREST
+-- ============================================================================
 
--- ملاحظة: السياسة أعلاه تسمح لأي حساب مسجَّل دخول على مشروعك برؤية
--- وتعديل كل الصفوف (لا يوجد فصل بيانات بين مستخدم وآخر لو سجّل أكثر
--- من شخص على نفس مشروع Supabase). هذا مناسب لمشروع شخصي واحد لكل
--- مشروع Supabase كما هو مُصمَّم. لو احتجت لاحقًا عزل بيانات كل مستخدم
--- حتى لو شاركوا نفس المشروع، أضف عمود user_id uuid على كل جدول بقيمة
--- افتراضية auth.uid()، وغيّر كل سياسة إلى:
---   using (auth.uid() = user_id) with check (auth.uid() = user_id)
 
--- ══════════════════════════════════════════════════════════════
--- بيانات ابتدائية اختيارية (يمكن حذف هذا القسم إن كنت ستُدخل بياناتك يدويًا)
--- ══════════════════════════════════════════════════════════════
-insert into app_settings (id, value) values (
-  1,
-  jsonb_build_object(
-    'exchange_name', '',
-    'base_currency', 'EGP',
-    'currencies', jsonb_build_array(
-      jsonb_build_object('code','EGP','name','الجنيه المصري'),
-      jsonb_build_object('code','USD','name','دولار أمريكي'),
-      jsonb_build_object('code','SAR','name','ريال سعودي'),
-      jsonb_build_object('code','AED','name','درهم إماراتي'),
-      jsonb_build_object('code','EUR','name','يورو'),
-      jsonb_build_object('code','GBP','name','جنيه إسترليني')
-    ),
-    'goldapi_key', '',
-    'zakat', jsonb_build_object(
-      'start_date', null, 'gold_price', null, 'silver_price', null,
-      'basis', 'gold', 'include', jsonb_build_object(), 'history', jsonb_build_array()
-    )
-  )
-) on conflict (id) do nothing;
+-- ============================================================================
+-- PART 1: TABLES
+-- ============================================================================
+--  ملاحظة عامة:
+--    نستخدم IF NOT EXISTS لتفادي أخطاء إعادة التشغيل.
+--    الترتيب مهم: الجداول الأب (banks) تُنشأ قبل الجداول الابن
+--    التي تشير إليها بمفاتيح أجنبية (Foreign Keys).
+-- ============================================================================
 
--- ══════════════════════════════════════════════════════════════
--- ✅ انتهى. بعد تشغيل هذا السكريبت:
---   1) ارجع لصفحة "الإعدادات" داخل التطبيق وأضف عملاتك/اسم محفظتك.
---   2) أضف حساباتك البنكية من صفحة "الحسابات البنكية".
---   3) سجّل عملياتك (شراء أسهم/معادن/شهادات، ديون، إلخ) بالترتيب
---      الزمني الصحيح من الأقدم للأحدث للحصول على أرصدة وسجلات دقيقة.
--- ══════════════════════════════════════════════════════════════
+
+-- ----------------------------------------------------------------------------
+-- 1) banks — البنوك والحسابات
+-- ----------------------------------------------------------------------------
+--  يمثل كل صف حسابًا بنكيًا أو محفظة كاش.
+--  الأعمدة المهمة:
+--    - type: نوع الحساب (جاري/توفير/استثماري/بورصة/كاش)
+--    - balance: الرصيد الحالي
+--    - min_balance: الحد الأدنى للرصيد
+--    - is_active: هل الحساب نشط أم مؤرشف
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.banks (
+  id           bigserial PRIMARY KEY,
+  name         text NOT NULL,
+  bank_code    text,
+  type         text DEFAULT 'جاري'
+    CHECK (type = ANY (ARRAY['جاري','توفير','استثماري','بورصة','كاش'])),
+  currency     text DEFAULT 'EGP',
+  account_no   text,
+  balance      numeric DEFAULT 0,
+  min_balance  numeric DEFAULT 0,
+  notes        text,
+  created_at   timestamptz DEFAULT now(),
+  color        text DEFAULT '#3b82f6',
+  is_active    boolean DEFAULT true
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 2) bank_transactions — معاملات الحسابات البنكية
+-- ----------------------------------------------------------------------------
+--  كل إيداع أو سحب أو تحويل يُسجَّل هنا.
+--  الأعمدة المهمة:
+--    - type: نوع العملية (إيداع/سحب/تحويل...)
+--    - balance_after: الرصيد بعد تنفيذ العملية (للتتبع التاريخي)
+--    - linked_transfer_id: يربط التحويلات الثنائية (من/إلى)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.bank_transactions (
+  id                  bigserial PRIMARY KEY,
+  bank_id             bigint,
+  type                text NOT NULL,
+  amount              numeric NOT NULL,
+  balance_after       numeric,
+  date                date DEFAULT CURRENT_DATE,
+  notes               text,
+  created_at          timestamptz DEFAULT now(),
+  category            text,
+  linked_transfer_id  bigint,
+  CONSTRAINT bank_transactions_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 3) stock_transactions — معاملات الأسهم
+-- ----------------------------------------------------------------------------
+--  شراء/بيع الأسهم في الأسواق المختلفة (EGX, NYSE, ... إلخ).
+--  الأعمدة المهمة:
+--    - bank_transaction_id: يربط المعاملة بعملية بنكية (خصم/إيداع تلقائي)
+--    - profit: الربح المحقق (لعمليات البيع)
+--    - commission / commission_fixed: عمولة نسبية وثابتة
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.stock_transactions (
+  id                   bigserial PRIMARY KEY,
+  bank_id              bigint,
+  type                 text NOT NULL
+    CHECK (type = ANY (ARRAY['شراء','بيع'])),
+  symbol               text NOT NULL,
+  name                 text NOT NULL,
+  sec_type             text DEFAULT 'سهم',
+  quantity             numeric NOT NULL,
+  price                numeric NOT NULL,
+  total                numeric NOT NULL,
+  commission           numeric DEFAULT 0,
+  net                  numeric NOT NULL,
+  date                 date DEFAULT CURRENT_DATE,
+  commission_fixed     numeric DEFAULT 0,
+  profit               numeric,
+  bank_transaction_id  bigint,
+  created_at           timestamptz DEFAULT now(),
+  market               text DEFAULT 'EGX'
+    CHECK (market = ANY (ARRAY['EGX','TADAWUL','ADX','NYSE','NASDAQ','CRYPTO'])),
+  price_currency       text DEFAULT 'EGP',
+  notes                text,
+  CONSTRAINT stock_transactions_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id),
+  CONSTRAINT stock_transactions_bank_transaction_id_fkey
+    FOREIGN KEY (bank_transaction_id) REFERENCES public.bank_transactions(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 4) stock_prices — أسعار الأسهم الحالية
+-- ----------------------------------------------------------------------------
+--  جدول مرجعي يُحدَّث دوريًا بأسعار الأسهم.
+--  المفتاح الأساسي هو رمز السهم (symbol).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.stock_prices (
+  symbol         text PRIMARY KEY,
+  name           text,
+  sec_type       text DEFAULT 'سهم',
+  current_price  numeric NOT NULL,
+  updated_at     timestamptz DEFAULT now(),
+  market         text DEFAULT 'EGX'
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 5) metal_transactions — معاملات المعادن (ذهب/فضة)
+-- ----------------------------------------------------------------------------
+--  شراء/بيع المعادن مع احتساب:
+--    - manufacturing: مصنعية
+--    - cashback: استرداد نقدي
+--    - net: الصافي بعد كل الرسوم
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.metal_transactions (
+  id                   bigserial PRIMARY KEY,
+  bank_id              bigint,
+  op                   text NOT NULL
+    CHECK (op = ANY (ARRAY['شراء','بيع'])),
+  metal_type           text NOT NULL,
+  weight               numeric NOT NULL,
+  price_per_gram       numeric NOT NULL,
+  total                numeric NOT NULL,
+  manufacturing        numeric DEFAULT 0,
+  cashback             numeric DEFAULT 0,
+  net                  numeric NOT NULL,
+  date                 date DEFAULT CURRENT_DATE,
+  commission_fixed     numeric DEFAULT 0,
+  notes                text,
+  bank_transaction_id  bigint,
+  created_at           timestamptz DEFAULT now(),
+  currency             text DEFAULT 'EGP',
+  CONSTRAINT metal_transactions_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id),
+  CONSTRAINT metal_transactions_bank_transaction_id_fkey
+    FOREIGN KEY (bank_transaction_id) REFERENCES public.bank_transactions(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 6) metal_prices — أسعار المعادن الحالية
+-- ----------------------------------------------------------------------------
+--  جدول مرجعي لسعر الجرام لكل معدن.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.metal_prices (
+  metal_type      text PRIMARY KEY,
+  price_per_gram  numeric NOT NULL,
+  updated_at      timestamptz DEFAULT now()
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 7) certificates — الشهادات البنكية
+-- ----------------------------------------------------------------------------
+--  شهادات الاستثمار مع تفاصيل:
+--    - rate: سعر الفائدة
+--    - duration: المدة
+--    - payout_type: دورية صرف الفائدة
+--    - maturity_date: تاريخ الاستحقاق
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.certificates (
+  id                   bigserial PRIMARY KEY,
+  bank_id              bigint,
+  name                 text NOT NULL,
+  bank_name            text,
+  amount               numeric NOT NULL,
+  rate                 numeric NOT NULL,
+  duration             numeric NOT NULL,
+  issued_date          date DEFAULT CURRENT_DATE,
+  maturity_date        date,
+  total_interest       numeric,
+  break_fee            numeric DEFAULT 0,
+  bank_transaction_id  bigint,
+  created_at           timestamptz DEFAULT now(),
+  payout_type          text DEFAULT 'سنوي'
+    CHECK (payout_type = ANY (ARRAY['سنوي','شهري','أسبوعي','يومي'])),
+  interest_paid        numeric DEFAULT 0,
+  currency             text DEFAULT 'EGP',
+  CONSTRAINT certificates_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id),
+  CONSTRAINT certificates_bank_transaction_id_fkey
+    FOREIGN KEY (bank_transaction_id) REFERENCES public.bank_transactions(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 8) dividends — أرباح الأسهم (التوزيعات النقدية)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.dividends (
+  id                   bigserial PRIMARY KEY,
+  symbol               text NOT NULL,
+  amount               numeric NOT NULL,
+  date                 date DEFAULT CURRENT_DATE,
+  bank_id              bigint,
+  notes                text,
+  created_at           timestamptz DEFAULT now(),
+  bank_transaction_id  bigint,
+  CONSTRAINT dividends_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id),
+  CONSTRAINT dividends_bank_transaction_id_fkey
+    FOREIGN KEY (bank_transaction_id) REFERENCES public.bank_transactions(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 9) recurring_transactions — المعاملات الدورية
+-- ----------------------------------------------------------------------------
+--  معاملات متكررة (شهريًا/أسبوعيًا/سنويًا) تُطبَّق تلقائيًا.
+--  الأعمدة المهمة:
+--    - freq: التكرار
+--    - last_applied: آخر تاريخ تم فيه التطبيق (لمنع التكرار)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.recurring_transactions (
+  id            bigserial PRIMARY KEY,
+  name          text NOT NULL,
+  type          text NOT NULL
+    CHECK (type = ANY (ARRAY['إيداع','سحب'])),
+  freq          text NOT NULL
+    CHECK (freq = ANY (ARRAY['monthly','weekly','yearly'])),
+  amount        numeric NOT NULL,
+  bank_id       bigint,
+  start_date    date DEFAULT CURRENT_DATE,
+  created_at    timestamptz DEFAULT now(),
+  last_applied  date,
+  CONSTRAINT recurring_transactions_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 10) financial_goals — الأهداف المالية
+-- ----------------------------------------------------------------------------
+--  أهداف المستخدم (مثل: شراء سيارة، رحلة، ...).
+--  category: تصنيف الهدف (all / stocks / banks / ...)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.financial_goals (
+  id          bigserial PRIMARY KEY,
+  name        text NOT NULL,
+  target      numeric NOT NULL,
+  category    text DEFAULT 'all',
+  created_at  timestamptz DEFAULT now()
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 11) exchange_rates — أسعار صرف العملات
+-- ----------------------------------------------------------------------------
+--  جدول مرجعي لسعر صرف كل عملة مقابل العملة الأساسية.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.exchange_rates (
+  currency    text PRIMARY KEY,
+  rate        numeric NOT NULL,
+  updated_at  timestamptz DEFAULT now()
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 12) debts — الديون (لنا / علينا)
+-- ----------------------------------------------------------------------------
+--  يجب أن يُنشأ قبل debt_payments لأنه الأب في العلاقة.
+--  الأعمدة المهمة:
+--    - party: الطرف الآخر (شخص/جهة)
+--    - remaining: المتبقي من الدين
+--    - rate: نسبة الفائدة (إن وُجدت)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.debts (
+  id          bigserial PRIMARY KEY,
+  name        text NOT NULL,
+  party       text,
+  type        text NOT NULL,
+  rate        numeric DEFAULT 0,
+  amount      numeric NOT NULL,
+  remaining   numeric NOT NULL,
+  start_date  date,
+  due_date    date,
+  bank_id     bigint,
+  notes       text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT debts_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 13) debt_payments — دفعات سداد الديون
+-- ----------------------------------------------------------------------------
+--  كل دفعة مرتبطة بدين معين و(اختياريًا) بعملية بنكية.
+--  ON DELETE للـ FK debt_id: لا نحذف تلقائيًا، الحفاظ على السجل التاريخي.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.debt_payments (
+  id                   bigserial PRIMARY KEY,
+  debt_id              bigint NOT NULL,
+  bank_id              bigint,
+  amount               numeric NOT NULL,
+  date                 date DEFAULT CURRENT_DATE,
+  notes                text,
+  created_at           timestamptz DEFAULT now(),
+  bank_transaction_id  bigint,
+  CONSTRAINT debt_payments_debt_id_fkey
+    FOREIGN KEY (debt_id) REFERENCES public.debts(id),
+  CONSTRAINT debt_payments_bank_id_fkey
+    FOREIGN KEY (bank_id) REFERENCES public.banks(id),
+  CONSTRAINT debt_payments_bank_transaction_id_fkey
+    FOREIGN KEY (bank_transaction_id) REFERENCES public.bank_transactions(id)
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 14) portfolio_snapshots — لقطات المحفظة اليومية
+-- ----------------------------------------------------------------------------
+--  تُخزِّن إجمالي قيمة كل فئة في تاريخ معيّن.
+--  snapshot_date UNIQUE لضمان لقطة واحدة يوميًا.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.portfolio_snapshots (
+  id             bigserial PRIMARY KEY,
+  snapshot_date  date NOT NULL UNIQUE,
+  total_banks    numeric DEFAULT 0,
+  total_stocks   numeric DEFAULT 0,
+  total_metals   numeric DEFAULT 0,
+  total_certs    numeric DEFAULT 0,
+  grand_total    numeric DEFAULT 0,
+  created_at     timestamptz DEFAULT now()
+);
+
+
+-- ----------------------------------------------------------------------------
+-- 15) app_settings — إعدادات التطبيق
+-- ----------------------------------------------------------------------------
+--  جدول key-value لتخزين إعدادات مرنة بصيغة JSONB.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.app_settings (
+  id     integer PRIMARY KEY,
+  value  jsonb
+);
+
+
+-- ============================================================================
+-- PART 2: INDEXES
+-- ============================================================================
+--  الفهارس تُسرِّع:
+--    - عمليات الربط (JOIN) عبر أعمدة Foreign Key
+--    - الفلترة والترتيب على الأعمدة الشائعة (date, symbol, ...)
+-- ============================================================================
+
+-- فهارس المعاملات البنكية
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_bank_id
+  ON public.bank_transactions(bank_id);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_date
+  ON public.bank_transactions(date);
+
+-- فهارس معاملات الأسهم
+CREATE INDEX IF NOT EXISTS idx_stock_transactions_bank_id
+  ON public.stock_transactions(bank_id);
+CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+  ON public.stock_transactions(symbol);
+
+-- فهارس معاملات المعادن
+CREATE INDEX IF NOT EXISTS idx_metal_transactions_bank_id
+  ON public.metal_transactions(bank_id);
+
+-- فهارس الشهادات
+CREATE INDEX IF NOT EXISTS idx_certificates_bank_id
+  ON public.certificates(bank_id);
+
+-- فهارس التوزيعات
+CREATE INDEX IF NOT EXISTS idx_dividends_bank_id
+  ON public.dividends(bank_id);
+
+-- فهارس المعاملات الدورية
+CREATE INDEX IF NOT EXISTS idx_recurring_transactions_bank
+  ON public.recurring_transactions(bank_id);
+
+-- فهارس الديون والدفعات
+CREATE INDEX IF NOT EXISTS idx_debts_bank_id
+  ON public.debts(bank_id);
+CREATE INDEX IF NOT EXISTS idx_debt_payments_debt_id
+  ON public.debt_payments(debt_id);
+CREATE INDEX IF NOT EXISTS idx_debt_payments_bank_id
+  ON public.debt_payments(bank_id);
+
+
+-- ============================================================================
+-- PART 3: GRANTS
+-- ============================================================================
+--  منح الصلاحيات للأدوار القياسية في Supabase:
+--    - anon:          زوّار غير مسجّلين
+--    - authenticated: مستخدمون مسجّلون
+--    - service_role:  الخادم (يتجاوز RLS)
+--
+--  ALTER DEFAULT PRIVILEGES يضمن أن أي جدول/sequence جديد
+--  سيرث نفس الصلاحيات تلقائيًا.
+-- ============================================================================
+
+-- صلاحية استخدام المخطط
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+-- صلاحيات الجداول الحالية
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON ALL TABLES IN SCHEMA public
+  TO anon, authenticated, service_role;
+
+-- صلاحيات الـ sequences (لازمة لعمل INSERT مع bigserial)
+GRANT USAGE, SELECT
+  ON ALL SEQUENCES IN SCHEMA public
+  TO anon, authenticated, service_role;
+
+-- صلاحيات الدوال (لو استُخدمت RPC لاحقًا)
+GRANT EXECUTE
+  ON ALL FUNCTIONS IN SCHEMA public
+  TO anon, authenticated, service_role;
+
+-- الصلاحيات الافتراضية للجداول/الـ sequences/الدوال المستقبلية
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES
+  TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES
+  TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS
+  TO anon, authenticated, service_role;
+
+
+-- ============================================================================
+-- PART 4: ROW LEVEL SECURITY (ENABLE)
+-- ============================================================================
+--  تفعيل RLS يجعل الوصول الافتراضي ممنوعًا حتى تُضاف سياسة.
+--  هذا خط الدفاع الأول: بدون سياسة = لا وصول.
+-- ============================================================================
+
+ALTER TABLE public.banks                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_transactions       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_transactions      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_prices            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.metal_transactions      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.metal_prices            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.certificates            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dividends               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_transactions  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financial_goals         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exchange_rates          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.debts                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.debt_payments           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.portfolio_snapshots     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings            ENABLE ROW LEVEL SECURITY;
+
+
+-- ============================================================================
+-- PART 5: POLICIES
+-- ============================================================================
+--  سياسات RLS تسمح لدور authenticated بالوصول الكامل لكل الجداول.
+--  ⚠️ للإعداد السريع فقط. لتطبيق متعدد المستخدمين:
+--      1) أضف عمود user_id uuid DEFAULT auth.uid() لكل جدول
+--      2) استبدل USING (true) بـ USING (auth.uid() = user_id)
+--
+--  نستخدم DROP POLICY IF EXISTS قبل CREATE لضمان
+--  أن إعادة تشغيل الملف لا ترمي خطأ "policy already exists".
+-- ============================================================================
+
+-- إسقاط السياسات القديمة (إن وُجدت)
+DROP POLICY IF EXISTS "banks_all"                   ON public.banks;
+DROP POLICY IF EXISTS "bank_transactions_all"       ON public.bank_transactions;
+DROP POLICY IF EXISTS "stock_transactions_all"      ON public.stock_transactions;
+DROP POLICY IF EXISTS "stock_prices_all"            ON public.stock_prices;
+DROP POLICY IF EXISTS "metal_transactions_all"      ON public.metal_transactions;
+DROP POLICY IF EXISTS "metal_prices_all"            ON public.metal_prices;
+DROP POLICY IF EXISTS "certificates_all"            ON public.certificates;
+DROP POLICY IF EXISTS "dividends_all"               ON public.dividends;
+DROP POLICY IF EXISTS "recurring_transactions_all"  ON public.recurring_transactions;
+DROP POLICY IF EXISTS "financial_goals_all"         ON public.financial_goals;
+DROP POLICY IF EXISTS "exchange_rates_all"          ON public.exchange_rates;
+DROP POLICY IF EXISTS "debts_all"                   ON public.debts;
+DROP POLICY IF EXISTS "debt_payments_all"           ON public.debt_payments;
+DROP POLICY IF EXISTS "portfolio_snapshots_all"     ON public.portfolio_snapshots;
+DROP POLICY IF EXISTS "app_settings_all"            ON public.app_settings;
+
+-- إنشاء السياسات
+CREATE POLICY "banks_all" ON public.banks
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "bank_transactions_all" ON public.bank_transactions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "stock_transactions_all" ON public.stock_transactions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "stock_prices_all" ON public.stock_prices
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "metal_transactions_all" ON public.metal_transactions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "metal_prices_all" ON public.metal_prices
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "certificates_all" ON public.certificates
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "dividends_all" ON public.dividends
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "recurring_transactions_all" ON public.recurring_transactions
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "financial_goals_all" ON public.financial_goals
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "exchange_rates_all" ON public.exchange_rates
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "debts_all" ON public.debts
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "debt_payments_all" ON public.debt_payments
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "portfolio_snapshots_all" ON public.portfolio_snapshots
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "app_settings_all" ON public.app_settings
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+
+-- ============================================================================
+-- PART 6: RELOAD POSTGREST SCHEMA CACHE
+-- ============================================================================
+--  PostgREST يحتفظ بنسخة مخزّنة من مخطط قاعدة البيانات.
+--  هذا الأمر يجبره على إعادة القراءة فورًا بدل انتظار التحديث الدوري.
+-- ============================================================================
+
+NOTIFY pgrst, 'reload schema';
+
+
+-- ============================================================================
+-- END OF FILE
+-- ============================================================================
