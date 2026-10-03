@@ -234,6 +234,23 @@
         <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <span class="notif-badge" id="notif-badge" style="display:none">0</span>
       </div>
+      <!-- Help button -->
+<button class="dark-btn" onclick="openHelpModal()" title="دليل الاستخدام" aria-label="Help">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+    <line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>
+</button>
+
+<!-- SQL Copy button -->
+<button class="dark-btn" onclick="openSqlModal()" title="كود قاعدة البيانات" aria-label="SQL Schema">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="16 18 22 12 16 6"/>
+    <polyline points="8 6 2 12 8 18"/>
+    <line x1="14" y1="4" x2="10" y2="20"/>
+  </svg>
+</button>
       <div class="dark-btn" onclick="toggleDark()">
         <svg id="topbar-dark-icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
       </div>
