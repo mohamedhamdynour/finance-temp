@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>محفظتي — Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     AUTH GATE — connect to Supabase, then login/signup
+══════════════════════════════════════════════ -->
+<div class="auth-gate" id="auth-gate">
+  <div class="auth-box">
+    <div class="auth-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+    <h1>محفظتي المالية</h1>
+
+    <!-- Step 1: connect to the user's own Supabase project -->
+    <div id="auth-step-connect">
+      <h2 style="margin-top:14px">الاتصال بقاعدة بياناتك</h2>
+      <p class="auth-hint">كل مستخدم يربط التطبيق بمشروع Supabase الخاص به، فتبقى بياناتك على قاعدة بياناتك الشخصية بالكامل ولا تختلط بأحد. هتلاقي البيانات دي في مشروعك على supabase.com تحت Project Settings → API.</p>
+      <input id="conn-url" placeholder="رابط المشروع (Project URL)" style="direction:ltr;text-align:left" autocomplete="off">
+      <input id="conn-key" placeholder="المفتاح العام (anon / public key)" style="direction:ltr;text-align:left" autocomplete="off">
+      <button class="auth-submit" onclick="connectSupabase()">اتصال ومتابعة</button>
+      <div class="auth-error" id="conn-error"></div>
+    </div>
+
+    <!-- Step 2: login / signup (shown once a connection is established) -->
+    <div id="auth-step-login" class="hidden">
+      <div class="auth-tabs">
+        <button id="auth-tab-login" class="active" onclick="setAuthTab('login')">تسجيل الدخول</button>
+        <button id="auth-tab-signup" onclick="setAuthTab('signup')">حساب جديد</button>
+      </div>
+      <div id="auth-form-login">
+        <input id="login-email" type="email" placeholder="البريد الإلكتروني" autocomplete="username">
+        <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password">
+        <button class="auth-submit" onclick="doLogin()">دخول</button>
+      </div>
+      <div id="auth-form-signup" class="hidden">
+        <input id="signup-username" placeholder="اسم المستخدم" autocomplete="off">
+        <input id="signup-email" type="email" placeholder="البريد الإلكتروني" autocomplete="username">
+        <input id="signup-password" type="password" placeholder="كلمة المرور (6 أحرف على الأقل)" autocomplete="new-password">
+        <input id="signup-password2" type="password" placeholder="تأكيد كلمة المرور" autocomplete="new-password">
+        <button class="auth-submit" onclick="doSignup()">إنشاء الحساب</button>
+      </div>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-link" onclick="disconnectSupabase()">تغيير قاعدة البيانات المتصلة</div>
+    </div>
+
+    <div id="auth-loading" class="hidden">
+      <div class="auth-spinner"></div>
+      <p style="text-align:center;font-size:12px;color:var(--muted)">جاري التحقق...</p>
+    </div>
+  </div>
+</div>
+
+<div class="app hidden" id="main-app">
+<!-- ========== SIDEBAR ========== -->
+<div class="sidebar-wrap" style="position:relative;flex-shrink:0">
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    </div>
+    <div class="logo-text">
+      <div class="logo-title">محفظتي</div>
+      <div class="logo-sub">Portfolio Pro</div>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">الرئيسية</div>
+    <div class="nav-item active" data-page="dashboard" onclick="nav('dashboard')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+      <span class="nav-text">لوحة التحكم</span>
+      <span class="nav-badge" id="nb-dash" style="display:none">0</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">الحسابات</div>
+    <div class="nav-item" data-page="banks" onclick="nav('banks')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <span class="nav-text">الحسابات البنكية</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">الاستثمارات</div>
+    <div class="nav-item" data-page="stocks" onclick="nav('stocks')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+      <span class="nav-text">الأسهم والصناديق</span>
+    </div>
+    <div class="nav-item" data-page="metals" onclick="nav('metals')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+      <span class="nav-text">المعادن الثمينة</span>
+    </div>
+    <div class="nav-item" data-page="certs" onclick="nav('certs')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></div>
+      <span class="nav-text">الشهادات الادخارية</span>
+      <span class="nav-badge" id="nb-cert" style="display:none">0</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">مالي</div>
+    <div class="nav-item" data-page="debts" onclick="nav('debts')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>
+      <span class="nav-text">الديون والالتزامات</span>
+    </div>
+    <div class="nav-item" data-page="recurring" onclick="nav('recurring')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></div>
+      <span class="nav-text">عمليات متكررة</span>
+    </div>
+    <div class="nav-item" data-page="goals" onclick="nav('goals')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+      <span class="nav-text">الأهداف المالية</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">أدوات</div>
+    <div class="nav-item" data-page="prices" onclick="nav('prices')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>
+      <span class="nav-text">تحديث الأسعار</span>
+    </div>
+    <div class="nav-item" data-page="reports" onclick="nav('reports')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+      <span class="nav-text">التقارير والتحليل</span>
+    </div>
+    <div class="nav-item" data-page="zakat" onclick="nav('zakat')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+      <span class="nav-text">الزكاة</span>
+    </div>
+    <div class="nav-item" data-page="settings" onclick="nav('settings')">
+      <div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+      <span class="nav-text">الإعدادات</span>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-total">
+      <div class="sidebar-total-label">إجمالي المحفظة</div>
+      <div class="sidebar-total-value" id="sidebar-total">—</div>
+      <div class="sidebar-total-sub" id="sidebar-sync">جاري التحميل...</div>
+    </div>
+    <div class="sidebar-actions">
+      <button class="sidebar-btn" onclick="exportBackup()" title="نسخة احتياطية">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>نسخ</span>
+      </button>
+      <button class="sidebar-btn" onclick="document.getElementById('import-file').click()" title="استيراد">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span>استيراد</span>
+      </button>
+      <button class="sidebar-btn" onclick="toggleDark()" title="الوضع الليلي">
+        <svg id="dark-icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <span id="dark-text">ليلي</span>
+      </button>
+      <button class="sidebar-btn" onclick="doLogout()" title="تسجيل الخروج">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>خروج</span>
+      </button>
+    </div>
+    <div id="sidebar-username" style="font-size:10.5px;color:var(--muted);text-align:center;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackup(this)">
+  </div>
+</div>
+<div class="collapse-btn" onclick="toggleSidebar()" title="طي/توسيع">
+  <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+</div>
+</div>
+
+<!-- ========== MAIN ========== -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbar-title">لوحة التحكم</div>
+      <div class="topbar-subtitle" id="topbar-sub">نظرة شاملة على محفظتك</div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+      <select id="global-period-select" onchange="setPeriodFromSelect(this.value)" class="period-select">
+        <option value="3m">3 أشهر</option>
+        <option value="6m">6 أشهر</option>
+        <option value="1y" selected>سنة واحدة</option>
+        <option value="2y">سنتان</option>
+        <option value="5y">5 سنوات</option>
+        <option value="all">الكل</option>
+        <option value="custom">فترة مخصصة...</option>
+      </select>
+      <div id="global-custom-range" class="global-custom-range hidden">
+        <input type="date" id="global-date-from" style="padding:5px 7px;font-size:11px;border-radius:6px;border:.5px solid var(--border2);background:var(--surface);color:var(--text);width:128px">
+        <span style="color:var(--muted);font-size:10px">إلى</span>
+        <input type="date" id="global-date-to" style="padding:5px 7px;font-size:11px;border-radius:6px;border:.5px solid var(--border2);background:var(--surface);color:var(--text);width:128px">
+        <button class="btn btn-primary btn-sm" onclick="applyGlobalCustomRange()">تطبيق</button>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="loadAll()">
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        تحديث
+      </button>
+      <div class="notif-btn" id="notif-bell" onclick="toggleNotifications()">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="notif-badge" id="notif-badge" style="display:none">0</span>
+      </div>
+      <div class="dark-btn" onclick="toggleDark()">
+        <svg id="topbar-dark-icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </div>
+    </div>
+  </div>
+  <div class="content" id="main-content">
+
+<!-- notification panel -->
+<div class="notif-panel" id="notif-panel">
+  <div class="notif-header">
+    <span>الإشعارات</span>
+    <button class="btn-icon" onclick="toggleNotifications()" style="width:24px;height:24px"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+  <div class="notif-list" id="notif-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: DASHBOARD
+══════════════════════════════════════════════ -->
+<div id="page-dashboard" class="page active">
+  <div id="dash-alerts"></div>
+  <div class="kpi-grid" id="dash-kpis"></div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg></div>
+          توزيع المحفظة
+        </div>
+      </div>
+      <div class="card-body"><div class="chart-box"><canvas id="dash-pie"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>
+          إجمالي المحفظة عبر الزمن
+        </div>
+      </div>
+      <div class="card-body"><div class="chart-box"><canvas id="dash-line"></canvas></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        فئات المحفظة عبر الزمن
+      </div>
+    </div>
+    <div class="card-body"><div class="chart-box" style="min-height:200px"><canvas id="dash-stacked"></canvas></div></div>
+  </div>
+  <div class="grid-2" id="dash-movers"></div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        آخر العمليات
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted)">عدد:</span>
+        <input type="number" id="recent-count-input" value="25" min="1" max="200" style="width:60px;padding:4px 8px;border:.5px solid var(--border2);border-radius:6px;font-size:12px;font-family:var(--font);color:var(--text);background:var(--surface);direction:ltr" onchange="renderRecent()">
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      <div class="table-wrap"><table>
+        <thead><tr><th>التاريخ</th><th>النوع</th><th>الفئة</th><th>المبلغ</th><th>المصدر</th><th>ملاحظات</th><tr></thead>
+        <tbody id="dash-recent"></tbody>
+      </table></div>
+    </div>
+  </div>
+  <div id="dash-goals-section"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: BANKS
+══════════════════════════════════════════════ -->
+<div id="page-banks" class="page">
+  <div class="kpi-grid" id="bank-kpis"></div>
+  <div class="filter-bar" style="justify-content:space-between">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-teal" onclick="openModal('modal-add-bank')">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> حساب جديد
+      </button>
+      <button class="btn btn-success" onclick="openModal('modal-dep')">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg> إيداع
+      </button>
+      <button class="btn btn-gold" onclick="openModal('modal-wit')">
+        <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> سحب
+      </button>
+      <button class="btn btn-primary" onclick="openModal('modal-transfer')">
+        <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg> تحويل
+      </button>
+    </div>
+    <div class="period-bar" id="bank-sort-bar">
+      <div class="period-btn active" data-s="desc" onclick="setBankSort('desc');document.querySelectorAll('#bank-sort-bar .period-btn').forEach(x=>x.classList.remove('active'));this.classList.add('active')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-left:3px"><path d="M3 6h6M3 12h9M3 18h12"/></svg> الأكبر أولاً
+      </div>
+      <div class="period-btn" data-s="asc" onclick="setBankSort('asc');document.querySelectorAll('#bank-sort-bar .period-btn').forEach(x=>x.classList.remove('active'));this.classList.add('active')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-left:3px"><path d="M3 6h12M3 12h9M3 18h6"/></svg> الأصغر أولاً
+      </div>
+    </div>
+  </div>
+  <div class="bank-cards-grid" id="bank-cards"></div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div>
+        <span id="bank-table-title">كشف الحساب</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
+    </div>
+    <div class="card-body no-pad">
+      <div class="tab-bar" id="bank-tabs" style="margin:10px 16px 0;border:none;background:transparent"></div>
+      <div id="bank-txn-filters" style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0"></div>
+      <div class="table-wrap"><table>
+        <thead id="bank-txns-thead"><tr><th>التاريخ</th><th>النوع</th><th>الفئة</th><th>المبلغ</th><th>الرصيد بعد</th><th>ملاحظات</th><th></th></tr></thead>
+        <tbody id="bank-txns-tbody"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: STOCKS
+══════════════════════════════════════════════ -->
+<div id="page-stocks" class="page">
+  <!-- Market Tabs -->
+  <div class="tab-bar" style="margin-bottom:16px">
+    <div class="tab active" data-market="ALL" onclick="setStockMarket('ALL',this)">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      كل الأسواق
+    </div>
+    <div class="tab" data-market="EGX" onclick="setStockMarket('EGX',this)">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      البورصة المصرية
+    </div>
+    <div class="tab" data-market="TADAWUL" onclick="setStockMarket('TADAWUL',this)">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      تداول السعودي
+    </div>
+    <div class="tab" data-market="ADX" onclick="setStockMarket('ADX',this)">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      أبوظبي / دبي
+    </div>
+    <div class="tab" data-market="NYSE" onclick="setStockMarket('NYSE',this)">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      NYSE / NASDAQ
+    </div>
+    <div class="tab" data-market="CRYPTO" onclick="setStockMarket('CRYPTO',this)">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      كريبتو
+    </div>
+  </div>
+  <div class="kpi-grid" id="stock-kpis"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <button class="btn btn-success" onclick="openModal('modal-buy')">
+      <svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> شراء
+    </button>
+    <button class="btn btn-danger" onclick="openModal('modal-sell')">
+      <svg viewBox="0 0 24 24"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg> بيع
+    </button>
+    <button class="btn btn-purple" onclick="openModal('modal-dividend')">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg> توزيع أرباح
+    </button>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>الحيازات الحالية</div></div>
+    <div class="card-body"><div class="cards-grid" id="holdings-cards"></div></div>
+  </div>
+  <div id="stocks-insights"></div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg></div>سجل العمليات</div>
+    </div>
+    <div class="card-body no-pad"><div class="table-wrap"><table>
+      <thead><tr><th>التاريخ</th><th>نوع</th><th>الكود</th><th>الاسم</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th><th>عمولة</th><th>الصافي</th><th>ربح/خسارة</th><th>الحساب</th><th></th></tr></thead>
+      <tbody id="stock-txns-tbody"></tbody>
+    </table></div></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>أرباح الأسهم الموزعة</div></div>
+    <div class="card-body">
+      <div class="kpi-grid" id="div-kpis" style="margin-bottom:14px"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>التاريخ</th><th>الكود</th><th>المبلغ</th><th>الحساب</th><th>ملاحظات</th><th></th></tr></thead>
+        <tbody id="div-tbody"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: METALS
+══════════════════════════════════════════════ -->
+<div id="page-metals" class="page">
+  <div class="kpi-grid" id="metal-kpis"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <button class="btn btn-gold" onclick="openModal('modal-metal-buy')">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> شراء معدن
+    </button>
+    <button class="btn btn-danger" onclick="openModal('modal-metal-sell')">
+      <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> بيع معدن
+    </button>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>الحيازات</div></div>
+    <div class="card-body"><div class="cards-grid" id="metal-holdings-cards"></div></div>
+  </div>
+  <div id="metals-insights"></div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg></div>سجل العمليات</div>
+    </div>
+    <div class="card-body no-pad"><div class="table-wrap"><table>
+      <thead><tr><th>التاريخ</th><th>نوع</th><th>المعدن</th><th>الوزن</th><th>سعر/جم</th><th>الإجمالي</th><th>تصنيع</th><th>كاش باك</th><th>الصافي</th><th>ر/خ هذه العملية</th><th>الحساب</th><th></th></tr></thead>
+      <tbody id="metal-txns-tbody"></tbody>
+    </table></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: CERTS
+══════════════════════════════════════════════ -->
+<div id="page-certs" class="page">
+  <div class="kpi-grid" id="cert-kpis"></div>
+  <div id="cert-alerts"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <button class="btn btn-purple" onclick="openModal('modal-cert-add')">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> شهادة جديدة
+    </button>
+    <button class="btn btn-danger" onclick="openModal('modal-cert-break')">
+      <svg viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg> كسر شهادة
+    </button>
+    <button class="btn btn-success" onclick="openBulkCertPayout()">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg> صرف العائد الإجمالي
+    </button>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg></div>الشهادات النشطة</div></div>
+    <div class="card-body"><div class="cards-grid" id="cert-cards"></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: DEBTS
+══════════════════════════════════════════════ -->
+<div id="page-debts" class="page">
+  <div class="kpi-grid" id="debt-kpis"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <button class="btn btn-danger" onclick="openModal('modal-debt-add')">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> إضافة دين/التزام
+    </button>
+    <button class="btn btn-success" onclick="openModal('modal-debt-pay')">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> تسجيل دفعة
+    </button>
+  </div>
+  <div id="debts-list"></div>
+  <div id="debts-payments-log"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: RECURRING
+══════════════════════════════════════════════ -->
+<div id="page-recurring" class="page">
+  <div class="kpi-grid" id="recurring-kpis" style="margin-bottom:16px"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;justify-content:space-between">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-teal" onclick="openModal('modal-recurring-add')">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> إضافة عملية متكررة
+      </button>
+      <button class="btn btn-success" onclick="applyAllRecurring()">
+        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> تطبيق كل المستحق الآن
+      </button>
+    </div>
+    <div class="tab-bar" id="recurring-filter-tabs" style="border:none;background:transparent"></div>
+  </div>
+  <div class="cards-grid" id="recurring-cards"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: GOALS
+══════════════════════════════════════════════ -->
+<div id="page-goals" class="page">
+  <button class="btn btn-purple" onclick="openModal('modal-goal-add')" style="margin-bottom:16px">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> هدف جديد
+  </button>
+  <div id="goals-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: PRICES
+══════════════════════════════════════════════ -->
+<div id="page-prices" class="page">
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>أسعار الأسهم</div></div>
+      <div class="card-body">
+        <div id="stock-prices-list"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveStockPrices()" style="margin-top:10px;width:100%">
+          <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> حفظ أسعار الأسهم
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>أسعار المعادن</div></div>
+      <div class="card-body">
+        <div id="metal-prices-list"></div>
+        <button class="btn btn-gold btn-sm" onclick="saveMetalPrices()" style="margin-top:10px;width:100%">
+          <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> حفظ أسعار المعادن
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>أسعار الصرف</div></div>
+      <div class="card-body">
+        <div id="exchange-rates-list"></div>
+        <div class="form-hint" style="margin-top:8px">تُخزَّن أسعار الصرف دائمًا نسبةً إلى الجنيه المصري (EGP) كعملة مرجعية ثابتة داخليًا، ثم يُحوِّلها التطبيق تلقائيًا إلى عملتك الأساسية المختارة في الإعدادات عند عرض الإجماليات — مش محتاج تعمل أي حسابات يدوية.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: REPORTS (ENHANCED)
+══════════════════════════════════════════════ -->
+<div id="page-reports" class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="font-size:12px;color:var(--muted)">آخر تحديث: <span id="r-last-update">—</span></div>
+    <button class="btn btn-primary" onclick="exportPDF()">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> تصدير PDF
+    </button>
+  </div>
+  <!-- KPIs -->
+  <div class="kpi-grid" id="report-kpis"></div>
+  <!-- Currency Converter Card -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/></svg></div>إجمالي المحفظة بعملة أخرى</div>
+      <select id="r-currency-sel" class="period-select" onchange="updateReportCurrencyCard()" style="padding:5px 12px;font-size:12px">
+        <option value="EGP">EGP</option><option value="USD">USD</option><option value="EUR">EUR</option>
+        <option value="GBP">GBP</option><option value="SAR">SAR</option><option value="AED">AED</option>
+      </select>
+    </div>
+    <div class="card-body"><div id="r-currency-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"></div></div>
+  </div>
+  <!-- Category Cards -->
+  <div id="r-category-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px"></div>
+  <!-- Line Chart -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>أداء المحفظة عبر الزمن</div>
+    </div>
+    <div class="card-body"><div class="chart-box" style="min-height:220px"><canvas id="r-line"></canvas></div></div>
+  </div>
+  <!-- Pie + PnL Bar -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg></div>توزيع المحفظة الكلي</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-pie"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>الأرباح والخسائر بالفئة</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-pnl"></canvas></div></div>
+    </div>
+  </div>
+  <!-- Stocks Alloc & PnL -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>توزيع الأسهم</div></div>
+      <div class="card-body" id="r-stocks-alloc"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>ربح / خسارة الأسهم</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-stocks-pnl"></canvas></div></div>
+    </div>
+  </div>
+  <!-- Metals Alloc & PnL -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>توزيع المعادن</div></div>
+      <div class="card-body" id="r-metals-alloc"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l);color:var(--gold)"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>ربح / خسارة المعادن</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-metals-pnl"></canvas></div></div>
+    </div>
+  </div>
+  <!-- Banks Alloc & Activity -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></div>توزيع الأرصدة البنكية</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-banks"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>نشاط الحركات</div></div>
+      <div class="card-body"><div class="chart-box"><canvas id="r-activity"></canvas></div></div>
+    </div>
+  </div>
+  <!-- Certs Timeline -->
+  <div class="card">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>جدول استحقاق الشهادات</div></div>
+    <div class="card-body"><div class="chart-box"><canvas id="r-certs"></canvas></div></div>
+  </div>
+  <!-- Debts Section -->
+  <div id="r-debts-section"></div>
+  <!-- Financial Statement -->
+  <div class="card">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>القائمة المالية التفصيلية</div></div>
+    <div class="card-body no-pad"><div class="table-wrap"><table id="r-detail-table">
+      <thead><tr><th style="min-width:200px">البند</th><th style="text-align:left;direction:ltr;min-width:120px">التكلفة (<span class="cur-unit">ج.م</span>)</th><th style="text-align:left;direction:ltr;min-width:120px">القيمة الحالية</th><th style="text-align:left;direction:ltr;min-width:120px">ر/خ (<span class="cur-unit">ج.م</span>)</th><th style="text-align:left;direction:ltr;min-width:90px">عائد %</th><th style="min-width:80px">من الفئة</th><th style="min-width:80px">من المحفظة</th> </thead>
+      <tbody id="r-detail-tbody"></tbody>
+    </table></div></div>
+  </div>
+  <!-- Income Statement -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>قائمة الدخل (عن الفترة المحددة)</div></div>
+    <div class="card-body no-pad"><div class="table-wrap"><table><tbody id="r-income-tbody"></tbody></table></div></div>
+  </div>
+  <!-- Cash Flow Statement -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><polyline points="17 5 12 1 7 5"/><polyline points="7 19 12 23 17 19"/></svg></div>قائمة التدفقات النقدية (عن الفترة المحددة)</div></div>
+    <div class="card-body no-pad"><div class="table-wrap"><table><tbody id="r-cashflow-tbody"></tbody></table></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: ZAKAT
+══════════════════════════════════════════════ -->
+<div id="page-zakat" class="page">
+  <div class="card" style="border-right:3px solid var(--gold);margin-bottom:16px">
+    <div class="card-body" style="padding:14px 18px;font-size:12px;color:var(--muted);line-height:1.95">
+      <strong style="color:var(--text)">أساس الحساب (مرجعه دار الإفتاء المصرية):</strong>
+      الزكاة <strong>٢٫٥٪ (ربع العشر)</strong> على المال الذي بلغ <strong>النصاب</strong> وحال عليه <strong>الحول الهجري (سنة قمرية كاملة)</strong>، وكان فاضلًا عن الحوائج الأصلية (نفقة/سكن/ملبس) وغير مستغرق بدَين.
+      نصاب المال والأسهم (عروض التجارة) = ما يعادل <strong>85 جرام ذهب خالص عيار 24</strong> (≈ 97.15 جم عيار 21، ≈ 113.4 جم عيار 18)، ويُقدَّر بسعر الذهب وقت وجوب الزكاة.
+      نصاب الفضة 595 جرامًا خالصة (يُستخدم عند الرغبة فقط).
+      <a href="https://www.dar-alifta.org/ar/fatwa/details/17117" target="_blank" style="color:var(--blue)">فتوى دار الإفتاء: النصاب الشرعي</a>.
+      الأداة مساعدة حسابية ولا تُغني عن سؤال أهل العلم في حالتك الخاصة.
+    </div>
+  </div>
+  <div class="kpi-grid" id="zakat-kpis"></div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l,#fef3c7);color:var(--gold)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>الحول الهجري</div></div>
+    <div class="card-body" id="zk-hawl-panel"></div>
+  </div>
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82"/></svg></div>الإعدادات والنصاب</div></div>
+      <div class="card-body">
+        <div class="form-group"><label class="form-label">تاريخ بداية الحول (أول مرة ملكت فيها نصابًا)</label><input class="form-control" type="date" id="zk-start-date" onchange="previewZakatHijri()"><div class="form-hint" id="zk-start-hijri"></div></div>
+        <div class="form-group"><label class="form-label">النصاب يُقدَّر بـ</label>
+          <select class="form-control" id="zk-basis"><option value="gold">الذهب (85 جم عيار 24) — المعتمد لزكاة النقود</option><option value="silver">الفضة (595 جم) — الأحوط للفقراء</option></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">سعر جرام الذهب عيار 24 (<span class="cur-unit">ج.م</span>) *</label><input class="form-control" type="number" step="0.01" id="zk-gold-price" placeholder="مثال: 5200"></div>
+          <div class="form-group"><label class="form-label">سعر جرام الفضة الخالصة (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="zk-silver-price" placeholder="اختياري"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="saveZakatSettings()"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> حفظ وحساب</button>
+          <button class="btn btn-outline" onclick="autofillZakatPrices()"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10"/></svg> تعبئة الأسعار من أسعار المحفظة</button>
+        </div>
+        <div class="form-hint" style="margin-top:8px">أسعار الذهب تُؤخذ من صفحة "تحديث الأسعار" (ذهب 24 مباشرةً، أو تُحوَّل من عيار 21/18 تلقائيًا).</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--teal-l);color:var(--teal)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>الأموال الزكوية</div></div>
+      <div class="card-body no-pad"><div class="table-wrap"><table>
+        <thead><tr><th>البند</th><th>القيمة (<span class="cur-unit">ج.م</span>)</th><th>يُزكّى؟</th></tr></thead>
+        <tbody id="zakat-breakdown-tbody"></tbody>
+      </table></div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--green-l);color:var(--green)"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>نتيجة الحساب</div></div>
+    <div class="card-body" id="zakat-result"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg></div>سجل ما أُخرج من الزكاة</div></div>
+    <div class="card-body no-pad"><div class="table-wrap"><table>
+      <thead><tr><th>التاريخ</th><th>التاريخ الهجري</th><th>المبلغ</th><th>الوعاء وقتها</th><th>من حساب</th><th></th></tr></thead>
+      <tbody id="zakat-history-tbody"></tbody>
+    </table></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: SETTINGS
+══════════════════════════════════════════════ -->
+<div id="page-settings" class="page">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--blue-l);color:var(--blue)"><svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div>بيانات المحفظة العامة</div></div>
+      <div class="card-body">
+        <div class="form-group"><label class="form-label">اسم المحفظة / البورصة المعتمدة</label><input class="form-control" id="st-exchange-name" placeholder="مثال: البورصة المصرية EGX"></div>
+        <div class="form-group"><label class="form-label">العملة الأساسية لعرض الإجماليات</label>
+          <select class="form-control" id="st-base-currency"></select>
+          <div class="form-hint">كل الإجماليات والتقارير في المحفظة تُعرض بهذه العملة؛ المبالغ بعملات أخرى تُحوَّل إليها عبر أسعار الصرف في صفحة "تحديث الأسعار". لازم تكون العملة مُضافة في القائمة المجاورة أولاً.</div>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="saveGeneralSettings()">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> حفظ
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--purple-l);color:var(--purple)"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>العملات المتاحة في المحفظة</div></div>
+      <div class="card-body">
+        <div class="form-hint" style="margin-bottom:10px">هذه القائمة تظهر في كل مكان تختار فيه عملة (شراء أسهم، حسابات بنكية...) بصيغة "الكود - الاسم" — اضغط على اسم أي عملة لتعديله، أو أضف عملة جديدة</div>
+        <div id="st-currencies-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 90px"><input class="form-control" id="st-new-currency-code" placeholder="EGP" maxlength="5" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+          <div class="form-group" style="flex:1"><input class="form-control" id="st-new-currency-name" placeholder="اسم العملة، مثال: الجنيه المصري"></div>
+          <button class="btn btn-success" onclick="addSettingsCurrency()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l,#fef3c7);color:var(--gold)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>تحديث تلقائي لأسعار الذهب والفضة</div></div>
+    <div class="card-body">
+      <div class="form-hint" style="margin-bottom:10px">
+        يستخدم <a href="https://www.goldapi.io" target="_blank" style="color:var(--blue)">GoldAPI.io</a> لجلب سعر الذهب/الفضة يوميًا تلقائيًا (مرة واحدة يوميًا) — <strong>فقط لأنواع المعادن المملوكة فعليًا في محفظتك حاليًا</strong>، ولا يُضيف أو يُحدِّث أي نوع غير موجود عندك.
+      </div>
+      <div class="form-group"><label class="form-label">مفتاح GoldAPI.io (X-Access-Token)</label><input class="form-control" type="text" id="st-goldapi-key" placeholder="goldapi-xxxxxxxxxxxx" style="direction:ltr;text-align:left"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveGoldApiKey()">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> حفظ المفتاح
+        </button>
+        <button class="btn btn-gold" onclick="autoFetchMetalPrices(true)" id="metal-fetch-btn">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> جلب الأسعار الآن
+        </button>
+      </div>
+      <div id="st-metal-fetch-status" style="margin-top:10px;font-size:11.5px;color:var(--muted)"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gray-l,#f1f5f9);color:var(--muted)"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>معلومات وأدوات إضافية</div></div>
+    <div class="card-body" style="font-size:12px;color:var(--muted);line-height:1.9">
+      • النسخ الاحتياطي والاستعادة متاحة من القائمة الجانبية (أيقونة النسخة الاحتياطية أسفل الشريط الجانبي).<br>
+      • حدود التنبيه للحساب البنكي (الحد الأدنى للرصيد) تُضبط بشكل مستقل لكل حساب من داخل صفحة "الحسابات البنكية" عند التعديل.<br>
+      • حالة الاتصال بقاعدة البيانات تظهر أسفل الشريط الجانبي مباشرة.
+      <div id="st-storage-mode" style="margin-top:10px;font-weight:700"></div>
+      <div id="st-schema-warnings" style="margin-top:10px"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;border-right:3px solid var(--gold)">
+    <div class="card-header"><div class="card-title"><div class="card-title-icon" style="background:var(--gold-l,#fef3c7);color:var(--gold)"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>تنبيهات قاعدة البيانات</div></div>
+    <div class="card-body" id="st-live-schema-alert" style="font-size:12.5px;color:var(--muted);line-height:1.9">لا توجد تنبيهات حاليًا</div>
+  </div>
+</div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ========================================
+     ALL MODALS
+======================================== -->
+
+<!-- ADD/EDIT BANK -->
+<div class="overlay" id="modal-add-bank"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title" id="modal-add-bank-title">حساب بنكي جديد</div><button class="btn-icon" onclick="closeModal('modal-add-bank')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="eb-id">
+  <div class="form-row"><div class="form-group"><label class="form-label">اسم البنك *</label><input class="form-control" id="eb-name" placeholder="CIB، أهلي..."></div><div class="form-group"><label class="form-label">كود / اختصار</label><input class="form-control" id="eb-code" placeholder="CIB" oninput="this.value=this.value.toUpperCase()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">نوع الحساب</label><select class="form-control" id="eb-type"><option>جاري</option><option>توفير</option><option>استثماري</option><option>بورصة</option><option>كاش</option></select></div><div class="form-group"><label class="form-label">رمز العملة</label><select class="form-control" id="eb-currency"></select></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">رقم الحساب</label><input class="form-control" id="eb-account" placeholder="اختياري"></div><div class="form-group"><label class="form-label">الحد الأدنى</label><input class="form-control" type="number" id="eb-min" value="0"></div></div>
+  <div class="form-group"><label class="form-label">الرصيد الافتتاحي</label><input class="form-control" type="number" id="eb-opening" value="0"></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">لون الحساب</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="color" id="eb-color" value="#3b82f6" style="width:40px;height:36px;border:none;border-radius:6px;cursor:pointer;padding:2px">
+        <span style="font-size:11px;color:var(--muted)">اختر لوناً مميزاً للحساب</span>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px" id="bank-color-swatches"></div>
+    </div>
+    <div class="form-group"><label class="form-label">حالة الحساب</label>
+      <div style="display:flex;align-items:center;gap:10px;padding-top:8px">
+        <label class="switch-label">
+          <input type="checkbox" id="eb-active" checked class="switch-input">
+          <span class="switch-track"></span>
+          <span style="font-size:12.5px;font-weight:700">نشط</span>
+        </label>
+      </div>
+    </div>
+  </div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="eb-notes"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-bank')">إلغاء</button><button class="btn btn-teal" onclick="saveBank()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- DEPOSIT -->
+<div class="overlay" id="modal-dep"><div class="modal">
+  <div class="modal-header"><div class="modal-title">إيداع</div><button class="btn-icon" onclick="closeModal('modal-dep')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ed-txn-id">
+  <div class="form-group"><label class="form-label">الحساب *</label><select class="form-control" id="ed-bank" onchange="updateDepPreview()"></select></div>
+  <div class="form-group"><label class="form-label">الفئة</label><select class="form-control" id="ed-category"><option value="">— اختر الفئة —</option><optgroup label="مصادر الإيداع"><option value="مرتب">مرتب</option><option value="عائد استثماري">عائد استثماري</option><option value="مكافأة">مكافأة</option><option value="تحويل">تحويل وارد</option><option value="بيع أصل">بيع أصل</option><option value="هبة">هبة</option><option value="أخرى - إيداع">أخرى</option></optgroup></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ *</label><input class="form-control" type="number" step="0.01" id="ed-amount" placeholder="0.00" oninput="updateDepPreview()"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ed-date"></div></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="ed-notes"></div>
+  <div id="dep-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-dep')">إلغاء</button><button class="btn btn-success" onclick="doDeposit()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد</button></div>
+</div></div>
+
+<!-- WITHDRAW -->
+<div class="overlay" id="modal-wit"><div class="modal">
+  <div class="modal-header"><div class="modal-title">سحب</div><button class="btn-icon" onclick="closeModal('modal-wit')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ew-txn-id">
+  <div class="form-group"><label class="form-label">الحساب *</label><select class="form-control" id="ew-bank" onchange="updateWitPreview()"></select></div>
+  <div class="form-group"><label class="form-label">الفئة</label><select class="form-control" id="ew-category"><option value="">— اختر الفئة —</option><optgroup label="أوجه الصرف"><option value="مصروفات منزلية">مصروفات منزلية</option><option value="فواتير">فواتير وخدمات</option><option value="مواصلات">مواصلات</option><option value="تعليم">تعليم</option><option value="صحة">صحة</option><option value="ترفيه">ترفيه</option><option value="استثمار">استثمار / شراء أصل</option><option value="تحويل صادر">تحويل صادر</option><option value="سداد دين">سداد دين</option><option value="أخرى - سحب">أخرى</option></optgroup></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ *</label><input class="form-control" type="number" step="0.01" id="ew-amount" placeholder="0.00" oninput="updateWitPreview()"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ew-date"></div></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="ew-notes"></div>
+  <div id="wit-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-wit')">إلغاء</button><button class="btn btn-gold" onclick="doWithdraw()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد</button></div>
+</div></div>
+
+<!-- TRANSFER -->
+<div class="overlay" id="modal-transfer"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title">تحويل بين الحسابات</div><button class="btn-icon" onclick="closeModal('modal-transfer')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-group"><label class="form-label">من حساب *</label><select class="form-control" id="etr-from" onchange="updateTransferPreview()"></select></div>
+  <div class="form-group"><label class="form-label">إلى حساب *</label><select class="form-control" id="etr-to" onchange="updateTransferPreview()"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ (بعملة المرسِل) *</label><input class="form-control" type="number" step="0.01" id="etr-amount" oninput="updateTransferPreview()"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="etr-date"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">رسوم التحويل (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="etr-fee" value="0" placeholder="0.00" oninput="updateTransferPreview()"></div><div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="etr-notes"></div></div>
+  <div id="transfer-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-transfer')">إلغاء</button><button class="btn btn-primary" onclick="doTransfer()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد التحويل</button></div>
+</div></div>
+
+<!-- BUY STOCK -->
+<div class="overlay" id="modal-buy"><div class="modal modal-lg">
+  <div class="modal-header"><div class="modal-title">شراء ورقة مالية</div><button class="btn-icon" onclick="closeModal('modal-buy')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ebuy-id">
+  <div class="form-row"><div class="form-group"><label class="form-label">الكود *</label><input class="form-control" id="ebuy-sym" placeholder="ETEL" oninput="this.value=this.value.toUpperCase();autoFillStock()"></div><div class="form-group"><label class="form-label">الاسم *</label><input class="form-control" id="ebuy-name" placeholder="اسم الورقة المالية"></div></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">النوع</label><select class="form-control" id="ebuy-type"><option>سهم</option><option>صندوق أسهم</option><option>صندوق دخل ثابت</option><option>صندوق معادن</option><option>ETF</option></select></div>
+    <div class="form-group"><label class="form-label">السوق</label><select class="form-control" id="ebuy-market"><option value="EGX">البورصة المصرية (EGX)</option><option value="TADAWUL">تداول السعودي</option><option value="ADX">أبوظبي / دبي (ADX/DFM)</option><option value="NYSE">NYSE</option><option value="NASDAQ">NASDAQ</option><option value="CRYPTO">كريبتو</option></select></div>
+  </div>
+  <div class="form-row"><div class="form-group"><label class="form-label">عملة السعر</label><select class="form-control" id="ebuy-currency"><option value="EGP">ج.م (EGP)</option><option value="SAR">ريال (SAR)</option><option value="AED">درهم (AED)</option><option value="USD">دولار (USD)</option></select></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ebuy-date"></div></div>
+  <div class="form-row-3"><div class="form-group"><label class="form-label">الكمية *</label><input class="form-control" type="number" id="ebuy-qty" oninput="updateBuyPreview()"></div><div class="form-group"><label class="form-label">السعر/وحدة (<span class="cur-unit">ج.م</span>) *</label><input class="form-control" type="number" step="0.01" id="ebuy-price" oninput="updateBuyPreview()"></div><div class="form-group"><label class="form-label">عمولة %</label><input class="form-control" type="number" step="0.001" id="ebuy-comm" value="0.5" oninput="updateBuyPreview()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">عمولة ثابتة (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="ebuy-comm-fixed" value="0" oninput="updateBuyPreview()"></div><div class="form-group"><label class="form-label">خصم من حساب *</label><select class="form-control" id="ebuy-bank"></select></div></div>
+  <div class="form-group"><label class="form-label">ملاحظات (اختياري)</label><input class="form-control" id="ebuy-notes-field" placeholder="ستُضاف مع سعر الشراء تلقائياً"></div>
+  <div id="buy-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-buy')">إلغاء</button><button class="btn btn-success" onclick="doBuy()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد الشراء</button></div>
+</div></div>
+
+<!-- SELL STOCK -->
+<div class="overlay" id="modal-sell"><div class="modal modal-lg">
+  <div class="modal-header"><div class="modal-title">بيع ورقة مالية</div><button class="btn-icon" onclick="closeModal('modal-sell')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="esell-id">
+  <div class="form-group"><label class="form-label">الورقة المالية *</label><select class="form-control" id="esell-sym" onchange="updateSellPreview()"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">الكمية *</label><input class="form-control" type="number" id="esell-qty" oninput="updateSellPreview()"></div><div class="form-group"><label class="form-label">السعر (<span class="cur-unit">ج.م</span>) *</label><input class="form-control" type="number" step="0.01" id="esell-price" oninput="updateSellPreview()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">عمولة %</label><input class="form-control" type="number" step="0.001" id="esell-comm" value="0.5" oninput="updateSellPreview()"></div><div class="form-group"><label class="form-label">عمولة ثابتة (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="esell-comm-fixed" value="0" oninput="updateSellPreview()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="esell-date"></div><div class="form-group"><label class="form-label">إيداع في حساب *</label><select class="form-control" id="esell-bank"></select></div></div>
+  <div class="form-group"><label class="form-label">ملاحظات (اختياري)</label><input class="form-control" id="esell-notes" placeholder="ستُضاف مع سعر البيع تلقائياً"></div>
+  <div id="sell-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-sell')">إلغاء</button><button class="btn btn-danger" onclick="doSell()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد البيع</button></div>
+</div></div>
+
+<!-- METAL BUY -->
+<div class="overlay" id="modal-metal-buy"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title">شراء معدن</div><button class="btn-icon" onclick="closeModal('modal-metal-buy')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="emb-id">
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">نوع المعدن *</label>
+      <select class="form-control" id="emb-metal-type" onchange="onMetalTypeChange()">
+      </select>
+      <input class="form-control hidden" id="emb-metal-custom" placeholder="اكتب نوع المعدن" style="margin-top:6px" oninput="updateMetalBuyPreview()">
+    </div>
+    <div class="form-group"><label class="form-label">العنوان / التسمية (اختياري)</label>
+      <input class="form-control" id="emb-notes" placeholder="سبيكة 1 أوقية، خاتم، إسوارة...">
+    </div>
+  </div>
+  <div class="form-row"><div class="form-group"><label class="form-label">الوزن (جرام) *</label><input class="form-control" type="number" step="0.001" id="emb-weight" oninput="updateMetalBuyPreview()"></div><div class="form-group"><label class="form-label">سعر الجرام *</label><input class="form-control" type="number" step="0.01" id="emb-price" oninput="updateMetalBuyPreview()"></div></div>
+  <div class="form-group"><label class="form-label">عملة الشراء *</label><select class="form-control" id="emb-currency" onchange="updateMetalBuyPreview()"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">رسوم تصنيع/جرام</label><input class="form-control" type="number" step="0.01" id="emb-manuf" value="0" oninput="updateMetalBuyPreview()"></div><div class="form-group"><label class="form-label">عمولة ثابتة</label><input class="form-control" type="number" step="0.01" id="emb-fixed" value="0" oninput="updateMetalBuyPreview()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="emb-date"></div><div class="form-group"><label class="form-label">خصم من حساب *</label><select class="form-control" id="emb-bank"></select></div></div>
+  <div id="metal-buy-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-metal-buy')">إلغاء</button><button class="btn btn-gold" onclick="doMetalBuy()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد الشراء</button></div>
+</div></div>
+
+<!-- METAL SELL -->
+<div class="overlay" id="modal-metal-sell"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title">بيع معدن</div><button class="btn-icon" onclick="closeModal('modal-metal-sell')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ems-id">
+  <div class="form-group"><label class="form-label">المعدن المملوك *</label><select class="form-control" id="ems-type" onchange="updateMetalSellPreview()"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">الوزن (جرام) *</label><input class="form-control" type="number" step="0.001" id="ems-weight" oninput="updateMetalSellPreview()"></div><div class="form-group"><label class="form-label">سعر البيع/جرام *</label><input class="form-control" type="number" step="0.01" id="ems-price" oninput="updateMetalSellPreview()"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">كاش باك (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="ems-cashback" value="0" oninput="updateMetalSellPreview()"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ems-date"></div></div>
+  <div class="form-group"><label class="form-label">إيداع في حساب *</label><select class="form-control" id="ems-bank"></select></div>
+  <div id="metal-sell-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-metal-sell')">إلغاء</button><button class="btn btn-danger" onclick="doMetalSell()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد البيع</button></div>
+</div></div>
+
+<!-- CERT ADD -->
+<div class="overlay" id="modal-cert-add"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title" id="modal-cert-title">شهادة ادخارية جديدة</div><button class="btn-icon" onclick="closeModal('modal-cert-add')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ecert-id">
+  <div class="form-row"><div class="form-group"><label class="form-label">اسم الشهادة *</label><input class="form-control" id="ecert-name" placeholder="بلاتينيوم، ذهبية..."></div><div class="form-group"><label class="form-label">البنك المُصدر</label><input class="form-control" id="ecert-bank-name" placeholder="CIB، أهلي..."></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ *</label><input class="form-control" type="number" id="ecert-amount" oninput="updateCertPreview()"></div><div class="form-group"><label class="form-label">عملة الشراء *</label><select class="form-control" id="ecert-currency" onchange="updateCertPreview()"></select></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">سعر الفائدة السنوي % *</label><input class="form-control" type="number" step="0.01" id="ecert-rate" oninput="updateCertPreview()"></div><div class="form-group"><label class="form-label">نوع العائد</label><select class="form-control" id="ecert-payout" onchange="updateCertPreview()"><option value="سنوي">سنوي</option><option value="شهري">شهري</option><option value="أسبوعي">أسبوعي</option><option value="يومي">يومي</option></select></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المدة</label><select class="form-control" id="ecert-dur" onchange="updateCertPreview()"><option value="1">سنة</option><option value="2">سنتان</option><option value="3">3 سنوات</option><option value="5">5 سنوات</option><option value="7">7 سنوات</option></select></div><div class="form-group"><label class="form-label">تاريخ الإصدار</label><input class="form-control" type="date" id="ecert-date" oninput="updateCertPreview()"></div></div>
+  <div class="form-group"><label class="form-label">خصم من حساب *</label><select class="form-control" id="ecert-bank" onchange="updateCertPreview()"></select></div>
+  <div id="cert-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-cert-add')">إلغاء</button><button class="btn btn-purple" onclick="saveCert()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- CERT BREAK -->
+<div class="overlay" id="modal-cert-break"><div class="modal">
+  <div class="modal-header"><div class="modal-title">كسر شهادة ادخارية</div><button class="btn-icon" onclick="closeModal('modal-cert-break')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-group"><label class="form-label">الشهادة *</label><select class="form-control" id="ecb-cert" onchange="updateCertBreakPreview()"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">تاريخ الكسر</label><input class="form-control" type="date" id="ecb-date" onchange="updateCertBreakPreview()"></div><div class="form-group"><label class="form-label">رسوم الكسر (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="ecb-fee" value="0" oninput="updateCertBreakPreview()"></div></div>
+  <div class="form-group"><label class="form-label">إيداع في حساب *</label><select class="form-control" id="ecb-bank"></select></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="ecb-notes"></div>
+  <div id="cert-break-preview"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-cert-break')">إلغاء</button><button class="btn btn-danger" onclick="doCertBreak()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تأكيد الكسر</button></div>
+</div></div>
+
+<!-- CERT PAYOUT -->
+<div class="overlay" id="modal-cert-payout"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title">صرف عائد الشهادة</div><button class="btn-icon" onclick="closeModal('modal-cert-payout')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ecp-cert-id">
+  <div id="ecp-info" style="padding:12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12.5px"></div>
+  <div class="form-group">
+    <label class="form-label">طريقة التسجيل</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer" id="ecp-mode-single-wrap">
+        <input type="radio" name="ecp-mode" value="single" checked onchange="setCertPayoutMode('single')"> <span style="font-size:12px">مبلغ واحد بتاريخ محدد</span>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer" id="ecp-mode-schedule-wrap">
+        <input type="radio" name="ecp-mode" value="schedule" onchange="setCertPayoutMode('schedule')"> <span style="font-size:12px">حسب الجدول الأصلي (كل دفعة بتاريخها)</span>
+      </label>
+    </div>
+  </div>
+  <div id="ecp-single-fields">
+    <div class="form-row"><div class="form-group"><label class="form-label">مبلغ العائد (<span class="cur-unit">ج.م</span>)</label><input class="form-control" type="number" step="0.01" id="ecp-amount"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ecp-date"></div></div>
+  </div>
+  <div id="ecp-schedule-fields" class="hidden">
+    <div class="form-hint" style="margin-bottom:8px">هيتم تسجيل كل دفعة مستحقة ولم تُسجَّل بعد، كل واحدة بتاريخها الفعلي من تاريخ الإصدار وحتى اليوم، في نفس الحساب أدناه</div>
+    <div id="ecp-schedule-preview" style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px"></div>
+  </div>
+  <div class="form-group"><label class="form-label">إيداع في حساب *</label><select class="form-control" id="ecp-bank"></select></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-cert-payout')">إلغاء</button><button class="btn btn-success" id="ecp-submit-btn" onclick="doCertPayout()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> صرف العائد</button></div>
+</div></div>
+
+<!-- ZAKAT PAY -->
+<div class="overlay" id="modal-zakat-pay"><div class="modal">
+  <div class="modal-header"><div class="modal-title">تسجيل إخراج الزكاة</div><button class="btn-icon" onclick="closeModal('modal-zakat-pay')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ (<span class="cur-unit">ج.م</span>) *</label><input class="form-control" type="number" step="0.01" id="zpay-amount"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="zpay-date"></div></div>
+  <div class="form-group"><label class="form-label">تُخصم من حساب *</label><select class="form-control" id="zpay-bank"></select></div>
+  <div class="form-hint">يُسجَّل سحب بنكي بفئة "زكاة"، ويستمر الحول التالي من نفس التاريخ الهجري السنوي.</div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-zakat-pay')">إلغاء</button><button class="btn btn-success" onclick="doZakatPay()">تأكيد</button></div>
+</div></div>
+
+<!-- BULK CERT PAYOUT -->
+<div class="overlay" id="modal-bulk-cert-payout"><div class="modal modal-lg">
+  <div class="modal-header"><div class="modal-title">صرف العائد الإجمالي لكل الشهادات</div><button class="btn-icon" onclick="closeModal('modal-bulk-cert-payout')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-group">
+    <label class="form-label">طريقة التسجيل</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer" id="bcp-mode-single-wrap">
+        <input type="radio" name="bcp-mode" value="single" checked onchange="setBulkCertMode('single')"> <span style="font-size:12px">تاريخ واحد لكل الشهادات</span>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer" id="bcp-mode-schedule-wrap">
+        <input type="radio" name="bcp-mode" value="schedule" onchange="setBulkCertMode('schedule')"> <span style="font-size:12px">كل شهادة بجدولها الأصلي</span>
+      </label>
+    </div>
+  </div>
+  <div id="bcp-date-wrap" class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="bcp-date"></div>
+  <div class="form-hint" style="margin-bottom:8px">كل شهادة تُصرف تلقائيًا في حسابها البنكي الخاص المُسجَّل بها. حدد الشهادات المطلوبة أدناه.</div>
+  <div id="bcp-list" style="max-height:320px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:4px"></div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-bulk-cert-payout')">إلغاء</button>
+    <button class="btn btn-success" onclick="doBulkCertPayout()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تنفيذ الصرف</button>
+  </div>
+</div></div>
+
+<!-- DIVIDEND -->
+<div class="overlay" id="modal-dividend"><div class="modal">
+  <div class="modal-header"><div class="modal-title">توزيع أرباح</div><button class="btn-icon" onclick="closeModal('modal-dividend')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="ediv-id">
+  <div class="form-group">
+    <label class="form-label">نوع التوزيعة</label>
+    <div style="display:flex;gap:8px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--green);border-radius:8px;cursor:pointer;background:var(--green-l)" id="ediv-mode-cash-wrap">
+        <input type="radio" name="ediv-mode" value="cash" checked onchange="setDividendMode('cash')"> <span style="font-size:12px">نقدي (يُودع في حساب بنكي)</span>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer" id="ediv-mode-stock-wrap">
+        <input type="radio" name="ediv-mode" value="stock" onchange="setDividendMode('stock')"> <span style="font-size:12px">أسهم (أسهم منحة إضافية)</span>
+      </label>
+    </div>
+  </div>
+  <div class="form-row"><div class="form-group"><label class="form-label">الكود *</label><input class="form-control" id="ediv-sym" placeholder="ETEL" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="form-group" id="ediv-amount-wrap"><label class="form-label">المبلغ (<span class="cur-unit">ج.م</span>) *</label><input class="form-control" type="number" id="ediv-amount"></div>
+    <div class="form-group hidden" id="ediv-shares-wrap"><label class="form-label">عدد الأسهم المُستلمة *</label><input class="form-control" type="number" step="0.0001" id="ediv-shares"></div>
+  </div>
+  <div class="form-row"><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="ediv-date"></div><div class="form-group" id="ediv-bank-wrap"><label class="form-label">إيداع في حساب</label><select class="form-control" id="ediv-bank"></select></div></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="ediv-notes"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-dividend')">إلغاء</button><button class="btn btn-purple" onclick="saveDividend()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- DEBT ADD/EDIT -->
+<div class="overlay" id="modal-debt-add"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title" id="modal-debt-title">إضافة دين / التزام</div><button class="btn-icon" onclick="closeModal('modal-debt-add')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="edebt-id">
+  <div class="form-row"><div class="form-group"><label class="form-label">الوصف *</label><input class="form-control" id="edebt-name" placeholder="قرض سيارة، دين لصديق..."></div><div class="form-group"><label class="form-label">الطرف الآخر</label><input class="form-control" id="edebt-party" placeholder="البنك، اسم الشخص..."></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">النوع</label><select class="form-control" id="edebt-type"><option>دين علي</option><option>دين لي</option></select></div><div class="form-group"><label class="form-label">فائدة % سنوي</label><input class="form-control" type="number" step="0.01" id="edebt-rate" value="0"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ الأصلي *</label><input class="form-control" type="number" id="edebt-amount"></div><div class="form-group"><label class="form-label">المتبقي *</label><input class="form-control" type="number" id="edebt-remaining"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">تاريخ البداية</label><input class="form-control" type="date" id="edebt-start"></div><div class="form-group"><label class="form-label">تاريخ الاستحقاق</label><input class="form-control" type="date" id="edebt-due"></div></div>
+  <div class="form-group"><label class="form-label">الحساب البنكي المرتبط</label><select class="form-control" id="edebt-bank"><option value="">— لا يوجد —</option></select></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="edebt-notes"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-debt-add')">إلغاء</button><button class="btn btn-danger" onclick="saveDebt()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- DEBT PAYMENT -->
+<div class="overlay" id="modal-debt-pay"><div class="modal">
+  <div class="modal-header"><div class="modal-title">تسجيل دفعة</div><button class="btn-icon" onclick="closeModal('modal-debt-pay')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-group"><label class="form-label">الدين *</label><select class="form-control" id="edp-debt"></select></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ *</label><input class="form-control" type="number" id="edp-amount"></div><div class="form-group"><label class="form-label">التاريخ</label><input class="form-control" type="date" id="edp-date"></div></div>
+  <div class="form-group"><label class="form-label">من حساب</label><select class="form-control" id="edp-bank"><option value="">— لا يوجد —</option></select></div>
+  <div class="form-group"><label class="form-label">ملاحظات</label><input class="form-control" id="edp-notes"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-debt-pay')">إلغاء</button><button class="btn btn-success" onclick="saveDebtPayment()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> تسجيل الدفعة</button></div>
+</div></div>
+
+<!-- RECURRING ADD/EDIT -->
+<div class="overlay" id="modal-recurring-add"><div class="modal">
+  <div class="modal-header"><div class="modal-title" id="modal-rec-title">عملية متكررة جديدة</div><button class="btn-icon" onclick="closeModal('modal-recurring-add')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <input type="hidden" id="erec-id">
+  <div class="form-row"><div class="form-group"><label class="form-label">الاسم *</label><input class="form-control" id="erec-name" placeholder="مرتب شهري، إيجار..."></div><div class="form-group"><label class="form-label">النوع</label><select class="form-control" id="erec-type"><option>إيداع</option><option>سحب</option></select></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">التكرار</label><select class="form-control" id="erec-freq"><option value="monthly">شهري</option><option value="weekly">أسبوعي</option><option value="yearly">سنوي</option></select></div><div class="form-group"><label class="form-label">المبلغ *</label><input class="form-control" type="number" id="erec-amount"></div></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">الحساب</label><select class="form-control" id="erec-bank"><option value="">— اختياري —</option></select></div><div class="form-group"><label class="form-label">تاريخ البداية</label><input class="form-control" type="date" id="erec-start"></div></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-recurring-add')">إلغاء</button><button class="btn btn-teal" onclick="saveRecurring()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- GOAL ADD -->
+<div class="overlay" id="modal-goal-add"><div class="modal">
+  <div class="modal-header"><div class="modal-title">هدف مالي جديد</div><button class="btn-icon" onclick="closeModal('modal-goal-add')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="form-group"><label class="form-label">اسم الهدف *</label><input class="form-control" id="egoal-name" placeholder="عقار، سيارة، سبيكة..."></div>
+  <div class="form-row"><div class="form-group"><label class="form-label">المبلغ المستهدف *</label><input class="form-control" type="number" id="egoal-target"></div><div class="form-group"><label class="form-label">الفئة</label><select class="form-control" id="egoal-cat"><option value="all">كل المحفظة</option><option value="banks">البنوك</option><option value="stocks">الأسهم</option><option value="metals">المعادن</option><option value="certs">الشهادات</option></select></div></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-goal-add')">إلغاء</button><button class="btn btn-purple" onclick="saveGoal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ</button></div>
+</div></div>
+
+<!-- GENERIC EDIT MODAL -->
+<div class="overlay" id="modal-edit"><div class="modal modal-md">
+  <div class="modal-header"><div class="modal-title" id="edit-modal-title">تعديل</div><button class="btn-icon" onclick="closeModal('modal-edit')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div id="edit-modal-body"></div>
+  <div class="modal-footer"><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit')">إلغاء</button><button class="btn btn-primary" id="edit-modal-save-btn" onclick="saveEdit()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> حفظ التعديلات</button></div>
+</div></div>
+
+<!-- TOAST -->
+<div class="toast" id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f1729;color:#f0f4ff;padding:10px 20px;border-radius:var(--radius);font-size:12.5px;font-weight:700;z-index:9999;opacity:0;transition:opacity .25s;pointer-events:none;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-lg);border:.5px solid rgba(255,255,255,.08);min-width:200px">
+  <svg id="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
