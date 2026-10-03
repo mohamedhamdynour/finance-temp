@@ -187,6 +187,217 @@
 </div>
 </div>
 
+<!-- ══════ HELP MODAL ══════ -->
+<div class="overlay" id="modal-help"><div class="modal modal-lg help-modal">
+  <div class="modal-header">
+    <div class="modal-title">
+      <span style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#1a56db,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px;flex-shrink:0">؟</span>
+      دليل الاستخدام
+    </div>
+    <button class="btn-icon" onclick="closeModal('modal-help')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="help-tabs">
+    <button class="help-tab active" data-tab="start" onclick="switchHelpTab('start')">🚀 البدء السريع</button>
+    <button class="help-tab" data-tab="features" onclick="switchHelpTab('features')">💡 الميزات</button>
+    <button class="help-tab" data-tab="telegram" onclick="switchHelpTab('telegram')">📱 Telegram</button>
+    <button class="help-tab" data-tab="zakat" onclick="switchHelpTab('zakat')">🕌 الزكاة</button>
+    <button class="help-tab" data-tab="faq" onclick="switchHelpTab('faq')">❓ أسئلة</button>
+  </div>
+
+  <div class="help-content">
+    <!-- START TAB -->
+    <div class="help-pane active" id="help-pane-start">
+      <div class="help-section">
+        <h3>1️⃣ أنشئ حسابك أولاً</h3>
+        <p>افتح التطبيق، اضغط "حساب جديد"، واملأ البريد وكلمة المرور. ستُخزَّن بياناتك في مشروع Supabase الخاص بك ولا يراها أحد.</p>
+      </div>
+      <div class="help-section">
+        <h3>2️⃣ اربط قاعدة البيانات</h3>
+        <p>من صفحة "الإعدادات" أو الشاشة الأولى، الصق <code>Project URL</code> و <code>anon key</code> من لوحة Supabase. لو أول مرة، شغّل كود <code>schema_v2.sql</code> من زر الـ SQL في الأعلى ←</p>
+      </div>
+      <div class="help-section">
+        <h3>3️⃣ أضف حسابك البنكي</h3>
+        <p>من القائمة الجانبية → "الحسابات البنكية" → "حساب جديد". أدخل الرصيد الافتتاحي كما يظهر في تطبيق البنك.</p>
+      </div>
+      <div class="help-section">
+        <h3>4️⃣ سجّل معاملاتك</h3>
+        <p>استخدم أزرار <strong>إيداع</strong> / <strong>سحب</strong> / <strong>تحويل</strong>. أي عملية تُحدّث الرصيد تلقائيًا فورًا.</p>
+      </div>
+      <div class="help-section">
+        <h3>5️⃣ فعّل Telegram (اختياري)</h3>
+        <p>من الإعدادات، اضغط "ربط Telegram" وأرسل الكود لبوتك. بعدها تقدر تسجل أي عملية من جوالك في ثانية.</p>
+      </div>
+    </div>
+
+    <!-- FEATURES TAB -->
+    <div class="help-pane" id="help-pane-features">
+      <div class="help-section">
+        <h3>🏦 الحسابات البنكية</h3>
+        <p>أضف عددًا غير محدود من الحسابات (جاري، توفير، استثماري، كاش). لكل حساب لون مميز يظهر في كل مكان.</p>
+      </div>
+      <div class="help-section">
+        <h3>📈 الأسهم والصناديق</h3>
+        <p>سجل شراء وبيع الأسهم في أسواق متعددة (EGX, TADAWUL, ADX, NYSE, NASDAQ, Crypto). التطبيق يحسب متوسط التكلفة والربح/الخسارة تلقائيًا.</p>
+      </div>
+      <div class="help-section">
+        <h3>🥇 المعادن الثمينة</h3>
+        <p>تتبع الذهب والفضة بالجرام، مع احتساب المصنعية والكاش باك. كل حيازة لها عنوان (مثل "سبيكة 1 أوقية").</p>
+      </div>
+      <div class="help-section">
+        <h3>📜 الشهادات الادخارية</h3>
+        <p>سجّل الشهادات بمعدل الفائدة والمدة. التطبيق يحسب العائد المستحق يوميًا، وينبهك قبل الاستحقاق بـ 30 يوم.</p>
+      </div>
+      <div class="help-section">
+        <h3>🤝 الديون والالتزامات</h3>
+        <p>ديون لك أو عليك مع تذكيرات الاستحقاق. سجل دفعات جزئية ويُحدَّث المتبقي تلقائيًا.</p>
+      </div>
+      <div class="help-section">
+        <h3>📊 التقارير الشاملة</h3>
+        <p>قائمة مالية كاملة، قائمة دخل، قائمة تدفقات نقدية — كلها قابلة للتصدير PDF.</p>
+      </div>
+    </div>
+
+    <!-- TELEGRAM TAB -->
+    <div class="help-pane" id="help-pane-telegram">
+      <div class="help-section">
+        <h3>📱 إدارة محفظتك من Telegram</h3>
+        <p>بعد الربط، تقدر تسجل أي عملية مباشرة من Telegram بدون ما تفتح الموقع:</p>
+        <ul style="line-height:2;margin-top:8px">
+          <li><code>/balance</code> — عرض كل الحسابات أو حساب معين</li>
+          <li><code>/in 5000 CIB</code> — إيداع في حساب CIB</li>
+          <li><code>/out 200 فاتورة</code> — سحب بملاحظة "فاتورة"</li>
+          <li><code>/buy 10 ETEL 25.5</code> — شراء 10 أسهم بسعر 25.5</li>
+          <li><code>/sell 5 ETEL 30</code> — بيع 5 أسهم بسعر 30</li>
+          <li><code>/metals</code> — عرض حيازات المعادن</li>
+          <li><code>/zakat</code> — حساب الزكاة الحالي</li>
+          <li><code>/report week</code> — تقرير آخر أسبوع</li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h3>🔗 كيفية الربط</h3>
+        <ol style="line-height:2;padding-right:20px">
+          <li>من الإعدادات، اضغط "ربط Telegram"</li>
+          <li>سيظهر لك كود من 6 أحرف صالح لمدة 5 دقائق</li>
+          <li>افتح البوت في Telegram وأرسل: <code>/link ABC123</code></li>
+          <li>سيؤكد لك الربط ويبدأ الاستقبال</li>
+        </ol>
+      </div>
+      <div class="help-section">
+        <h3>🔔 التنبيهات التلقائية</h3>
+        <p>البوت يرسل تلقائيًا:</p>
+        <ul style="line-height:2;margin-top:8px">
+          <li>⏰ تذكير قبل استحقاق شهادة بـ 7 أيام</li>
+          <li>💰 رصيد أقل من الحد الأدنى</li>
+          <li>📅 دين متأخر السداد</li>
+          <li>📊 تقرير أسبوعي كل سبت صباحًا</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ZAKAT TAB -->
+    <div class="help-pane" id="help-pane-zakat">
+      <div class="help-section">
+        <h3>🕌 حساب الزكاة الشرعية</h3>
+        <p>التطبيق يحسب الزكاة بناءً على:</p>
+        <ul style="line-height:2;margin-top:8px">
+          <li><strong>النصاب:</strong> ما يعادل 85 جرام ذهب عيار 24 (المعتمد من دار الإفتاء المصرية)</li>
+          <li><strong>النسبة:</strong> 2.5% (ربع العشر)</li>
+          <li><strong>الحول:</strong> سنة هجرية كاملة على المال</li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h3>📋 كيف تستخدمها</h3>
+        <ol style="line-height:2;padding-right:20px">
+          <li>من "الإعدادات"، حدّث سعر جرام الذهب عيار 24</li>
+          <li>من "الزكاة"، أدخل تاريخ بداية الحول</li>
+          <li>اختر ما تريد تزكيته من قائمة الأموال</li>
+          <li>التطبيق يحسب تلقائيًا ويظهر موعد الاستحقاق</li>
+          <li>عند الاستحقاق، اضغط "تسجيل إخراج الزكاة"</li>
+        </ol>
+      </div>
+      <div class="help-section" style="background:var(--gold-l);border-right:3px solid var(--gold);padding:12px;border-radius:8px">
+        <p style="margin:0;font-size:12px"><strong>⚠️ تنبيه:</strong> الأداة مساعدة حسابية فقط، ولا تُغني عن سؤال أهل العلم في حالتك الخاصة.</p>
+      </div>
+    </div>
+
+    <!-- FAQ TAB -->
+    <div class="help-pane" id="help-pane-faq">
+      <details class="help-faq"><summary>هل بياناتي آمنة؟</summary>
+        <p>نعم. كل مستخدم معزول تمامًا — RLS يمنع أي مستخدم من رؤية بيانات غيره، حتى لو كانوا على نفس قاعدة البيانات. أنت فقط من يملك صلاحية الوصول لبياناتك.</p>
+      </details>
+      <details class="help-faq"><summary>هل يعمل بدون إنترنت؟</summary>
+        <p>حاليًا لا، لكن قريبًا سنضيف PWA ليشتغل بدون إنترنت ويزامن عند الاتصال.</p>
+      </details>
+      <details class="help-faq"><summary>كيف آخذ نسخة احتياطية؟</summary>
+        <p>من الشريط الجانبي → "نسخ" → يحمّل ملف JSON يحتوي كل بياناتك. لو حصل خطأ، استخدم "استيراد" لاسترجاعها.</p>
+      </details>
+      <details class="help-faq"><summary>هل يمكنني استخدامه مع زوجتي؟</summary>
+        <p>نعم. زوجتك تعمل حسابها الخاص بنفس قاعدة البيانات أو قاعدة منفصلة. كل واحد يرى محفظته فقط.</p>
+      </details>
+      <details class="help-faq"><summary>كيف أغيّر العملة الأساسية؟</summary>
+        <p>من الإعدادات → "العملة الأساسية". كل التقارير والإجماليات ستُعرض بالعملة الجديدة، مع تحويل تلقائي للعملات الأخرى.</p>
+      </details>
+      <details class="help-faq"><summary>البوت رفض كود الربط؟</summary>
+        <p>الكود صالح 5 دقائق فقط. ولّد كود جديد من الإعدادات وأرسل الأمر مرة أخرى.</p>
+      </details>
+    </div>
+  </div>
+</div></div>
+
+<!-- ══════ SQL COPY MODAL ══════ -->
+<div class="overlay" id="modal-sql"><div class="modal modal-lg sql-modal">
+  <div class="modal-header">
+    <div class="modal-title">
+      <span style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#10b981,#0891b2);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>
+      </span>
+      كود قاعدة البيانات
+    </div>
+    <button class="btn-icon" onclick="closeModal('modal-sql')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="sql-intro">
+    <div class="sql-intro-icon">📋</div>
+    <div>
+      <h3>كيف تستخدم هذا الكود؟</h3>
+      <ol>
+        <li>افتح مشروعك في <a href="https://supabase.com/dashboard" target="_blank">Supabase Dashboard</a></li>
+        <li>اذهب إلى <strong>SQL Editor</strong> → <strong>+ New query</strong></li>
+        <li>اضغط <strong>"نسخ الكود"</strong> أدناه والصقه في المحرر</li>
+        <li>اضغط <strong>Run</strong> — سيُنشئ كل الجداول والصلاحيات تلقائيًا</li>
+      </ol>
+      <p style="margin-top:8px;font-size:11.5px;color:var(--muted)">⚠️ هذا الكود يحذف أي بيانات قديمة ويعيد البناء من الصفر. مناسب لـ Test DB فقط.</p>
+    </div>
+  </div>
+
+  <div class="sql-toolbar">
+    <div class="sql-toolbar-info">
+      <span class="sql-badge">schema_v2.sql</span>
+      <span class="sql-size" id="sql-file-size">— KB</span>
+    </div>
+    <div class="sql-toolbar-actions">
+      <button class="btn btn-outline btn-sm" onclick="downloadSql()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        تحميل
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="copySqlToClipboard()" id="sql-copy-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        <span id="sql-copy-text">نسخ الكود</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sql-code-wrap">
+    <pre id="sql-code-view" class="sql-code"><code>جاري التحميل...</code></pre>
+  </div>
+</div>
+</div>
+  
 <!-- ══════ MAIN ══════ -->
 <div class="main">
   <div class="topbar">
